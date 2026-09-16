@@ -64,6 +64,8 @@ class EventLog:
 class SimulationCore:
     """Deterministic tick-based simulation core."""
     
+    MARKET_UPDATE_INTERVAL = 10
+    
     def __init__(self, config: WorldConfig, seed: int | None = None):
         self.config = config
         self.seed = seed
@@ -136,32 +138,35 @@ class SimulationCore:
         return events
     
     def _update_markets(self) -> list[Event]:
-        """Update market prices based on supply/demand."""
+        """Update market prices based on supply/demand.
+        Throttled to MARKET_UPDATE_INTERVAL ticks to reduce O(markets × resources) cost.
+        """
         events = []
         if self.world is None:
             return events
         
+        if self.tick % self.MARKET_UPDATE_INTERVAL != 0:
+            return events
+        
         for market in self.world["markets"]:
-            # Compute price from supply and demand
+            price_changes = {}
             for res_type in ResourceType:
                 supply = market.supplies.get(res_type, 0)
                 demand = market.demands.get(res_type, 0)
                 
                 if demand > 0:
-                    # Price increases with low supply, decreases with high demand
+                    old_price = market.prices.get(res_type, 1.0)
                     if supply < demand:
-                        # Scarcity drives price up
-                        market.prices[res_type] = min(10.0, market.prices.get(res_type, 1.0) * 1.1)
+                        new_price = min(10.0, old_price * 1.1)
                     else:
-                        # Abundance drives price down
-                        market.prices[res_type] = max(0.1, market.prices.get(res_type, 1.0) * 0.99)
-                    
-                    events.append(self.market_event("price_changed", market.id, {
-                        "resource": res_type.value,
-                        "price": market.prices[res_type],
-                        "supply": supply,
-                        "demand": demand
-                    }))
+                        new_price = max(0.1, old_price * 0.99)
+                    market.prices[res_type] = new_price
+                    price_changes[res_type.value] = {"old": old_price, "new": new_price, "supply": supply, "demand": demand}
+            
+            if price_changes:
+                events.append(self.market_event("price_changed", market.id, {
+                    "price_changes": price_changes
+                }))
         
         return events
     
@@ -406,11 +411,17 @@ class SimulationCore:
     
     def _handle_price_changed(self, world: dict, event: Event, data: dict):
         """Handle market price change event."""
-        resource = data.get("resource")
-        price = data.get("price")
-        for market in world["markets"]:
-            market.prices[ResourceType(resource)] = price
-            break
+        if "price_changes" in data:
+            for res_name, change in data["price_changes"].items():
+                for market in world["markets"]:
+                    market.prices[ResourceType(res_name)] = change["new"]
+                    break
+        else:
+            resource = data.get("resource")
+            price = data.get("price")
+            for market in world["markets"]:
+                market.prices[ResourceType(resource)] = price
+                break
     
     def _handle_hunger_motivation(self, world: dict, event: Event, data: dict):
         """Handle hunger motivation event."""
