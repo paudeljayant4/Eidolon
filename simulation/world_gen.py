@@ -1,5 +1,4 @@
 import random
-from uuid import uuid4
 from ._types import (
     WorldConfig, TerrainType, ResourceType, Position, Region,
     Building, BuildingType, Resource, Agent, Market,
@@ -9,10 +8,63 @@ from ._types import (
 AgentId = str
 
 
+_agent_id_counter = 0
+_resource_id_counter = 0
+_region_id_counter = 0
+_building_id_counter = 0
+_market_id_counter = 0
+_city_id_counter = 0
+
+
+def _reset_counters(seed):
+    """Reset ID counters for deterministic generation."""
+    global _agent_id_counter, _resource_id_counter, _region_id_counter
+    global _building_id_counter, _market_id_counter, _city_id_counter
+    _agent_id_counter = seed
+    _resource_id_counter = seed * 1000
+    _region_id_counter = seed * 10000
+    _building_id_counter = seed * 100000
+    _market_id_counter = seed * 1000000
+    _city_id_counter = seed * 10000000
+
+
+def _next_agent_id():
+    global _agent_id_counter
+    _agent_id_counter += 1
+    return f"agent-{_agent_id_counter}"
+
+
+def _next_resource_id():
+    global _resource_id_counter
+    _resource_id_counter += 1
+    return f"res-{_resource_id_counter}"
+
+
+def _next_region_id():
+    global _region_id_counter
+    _region_id_counter += 1
+    return f"region-{_region_id_counter}"
+
+
+def _next_building_id():
+    global _building_id_counter
+    _building_id_counter += 1
+    return f"bld-{_building_id_counter}"
+
+
+def _next_market_id():
+    global _market_id_counter
+    _market_id_counter += 1
+    return f"market-{_market_id_counter}"
+
+
+def _next_city_id():
+    global _city_id_counter
+    _city_id_counter += 1
+    return f"city-{_city_id_counter}"
+
+
 def generate_terrain(width: int, height: int, seed: int | None = None) -> list[list[TerrainType]]:
-    """Generate a 2D terrain map using cellular automata."""
-    if seed is not None:
-        random.seed(seed)
     
     # Start with random terrain
     grid = [[random.choice(list(TerrainType)) for _ in range(height)] for _ in range(width)]
@@ -55,7 +107,7 @@ def generate_resources(
             
             if tile == TerrainType.FOREST:
                 resources.append(Resource(
-                    id=str(uuid4()),
+                    id=_next_resource_id(),
                     type=ResourceType.WOOD,
                     amount=random.randint(50, 200),
                     maxAmount=200,
@@ -64,7 +116,7 @@ def generate_resources(
                 ))
             elif tile == TerrainType.MOUNTAIN:
                 resources.append(Resource(
-                    id=str(uuid4()),
+                    id=_next_resource_id(),
                     type=ResourceType.IRON,
                     amount=random.randint(20, 80),
                     maxAmount=80,
@@ -73,7 +125,7 @@ def generate_resources(
                 ))
             elif tile == TerrainType.DESERT:
                 resources.append(Resource(
-                    id=str(uuid4()),
+                    id=_next_resource_id(),
                     type=ResourceType.STONE,
                     amount=random.randint(30, 100),
                     maxAmount=100,
@@ -82,7 +134,7 @@ def generate_resources(
                 ))
             elif tile == TerrainType.PLAINS:
                 resources.append(Resource(
-                    id=str(uuid4()),
+                    id=_next_resource_id(),
                     type=ResourceType.FOOD,
                     amount=random.randint(40, 150),
                     maxAmount=150,
@@ -91,7 +143,7 @@ def generate_resources(
                 ))
             elif tile == TerrainType.RIVER:
                 resources.append(Resource(
-                    id=str(uuid4()),
+                    id=_next_resource_id(),
                     type=ResourceType.WATER,
                     amount=random.randint(60, 120),
                     maxAmount=120,
@@ -173,7 +225,7 @@ def generate_cities(
         for i, btype in enumerate(building_types):
             pos_x = (i * 10) % max(region.position.x, 1)
             buildings.append(Building(
-                id=str(uuid4()),
+                id=_next_building_id(),
                 type=btype,
                 regionId=region.id,
                 position=Position(x=pos_x, y=i),
@@ -182,9 +234,9 @@ def generate_cities(
                 resourcesConsumed=[],
                 capacity=0
             ))
-        
+
         cities.append(City(
-            id=str(uuid4()),
+            id=_next_city_id(),
             name=f"City-{region.id}",
             regionId=region.id,
             population=random.randint(100, 500),
@@ -192,23 +244,24 @@ def generate_cities(
             resources=[],
             position=Position(x=region.position.x * 10 or 10, y=region.position.y * 10 or 10)
         ))
-    
+
     return cities
 
 
 def generate_world(config: WorldConfig) -> dict:
     """Generate a complete world given a config."""
     random.seed(config.seed)
-    
+    _reset_counters(config.seed)
+
     regions = generate_regions(config.width, config.height, config.seed)
     resources = generate_resources(
-        [[regions[i * config.width + j].terrain for j in range(config.height)] 
+        [[regions[i * config.width + j].terrain for j in range(config.height)]
          for i in range(config.width)],
         config.width, config.height, config.seed
     )
-    
+
     cities = generate_cities(regions, numCities=3)
-    
+
     # Create markets for each region
     markets: list[Market] = []
     for region in regions:
@@ -216,8 +269,8 @@ def generate_world(config: WorldConfig) -> dict:
             id=f"market-{region.id}",
             regionId=region.id
         ))
-    
-# Create multiple agents
+
+    # Create multiple agents
     agents: list[Agent] = []
     dispositions = ["friendly", "neutral", "hostile"]
     for i in range(5):

@@ -2,7 +2,6 @@ import json
 import pickle
 import random
 from datetime import datetime
-from uuid import uuid4
 from ._types import (
     WorldConfig, Position, Region, Building, BuildingType, Resource,
     ResourceType, Agent, AgentId, Market, Event, EventType,
@@ -13,13 +12,18 @@ from ._types import (
 class EventLog:
     """Event-sourced log that records all state changes."""
     
+    MAX_EVENTS = 100000  # Bounded event log to prevent memory leak
+    
     def __init__(self):
         self.events: list[Event] = []
+        self._event_count = 0
     
     def emit(self, event_type: str, source: str | None, target: str | None, data: dict | None = None) -> Event:
         """Emit an event and return it."""
+        event_id = f"evt-{self._event_count:010d}"
+        self._event_count += 1
         event = Event(
-            id=str(uuid4()),
+            id=event_id,
             timestamp=datetime.now().timestamp(),
             type=event_type,
             source=source,
@@ -27,17 +31,19 @@ class EventLog:
             data=data or {}
         )
         self.events.append(event)
+        if len(self.events) > self.MAX_EVENTS:
+            self.events = self.events[-self.MAX_EVENTS:]
         return event
-    
+
     def get_events_by_type(self, event_type: str) -> list[Event]:
         return [e for e in self.events if e.type == event_type]
-    
+
     def get_events_between(self, start_tick: int, end_tick: int) -> list[Event]:
         return [e for e in self.events if start_tick <= e.timestamp <= end_tick]
-    
+
     def to_dict(self) -> dict:
         return {"events": [e.to_dict() for e in self.events]}
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> EventLog:
         log = cls()
@@ -51,6 +57,7 @@ class EventLog:
                 data=e_data.get("data", {})
             )
             log.events.append(event)
+            log._event_count += 1
         return log
 
 
@@ -447,10 +454,19 @@ class SimulationCore:
 
 # For deterministic random with seed
 _random_cache: dict[int, random.Random] = {}
+_event_counter = 0
 
 def deterministic_random(event_type: str, tick: int, seed: int | None = None) -> random.Random:
-    """Get a deterministic RNG instance for a given type and tick."""
+    """Get a deterministic RNG instance for a given type and tick.
+    Cleans up old cache entries beyond the current tick window."""
+    global _event_counter
+    _event_counter += 1
     key = f"{event_type}-{tick}"
     if key not in _random_cache:
         _random_cache[key] = random.Random(seed or 42)
+    # Clean up entries older than 1000 ticks to prevent memory leak
+    if _event_counter % 1000 == 0:
+        old_keys = [k for k in _random_cache if int(k.split("-")[-1]) < tick - 1000]
+        for k in old_keys:
+            del _random_cache[k]
     return _random_cache[key]
