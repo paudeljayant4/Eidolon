@@ -373,3 +373,32 @@ Determinism verified: same seed → identical results across runs. No agent deat
 
 ### Category Rotation
 Scale is viable. Next cycle could address: Feature depth (economy/politics), or return to performance for agent decision bottleneck.
+
+## Deployment: GitHub Pages Observer
+
+### What was done
+1. Created `frontend/next.config.js` with `output: 'export'` for static export
+2. Created `frontend/pages/index.tsx` — observer UI displaying agent states and events
+3. Created `frontend/pages/_app.tsx` — app wrapper
+4. Created `.github/workflows/deploy-pages.yml` — GitHub Actions workflow for Pages deployment
+5. Generated `frontend/public/simulation-snapshot.json` — bounded 50-tick demo snapshot
+6. Created `docs/deployment.md` — full deployment documentation
+7. Updated `frontend/Dockerfile` to serve static export
+
+### Key decisions
+- **Static export**: No SSR/API routes — observer loads static JSON for demo mode
+- **Demo mode**: `simulation-snapshot.json` provides bounded simulation data
+- **basePath**: Set via `NEXT_PUBLIC_BASE_PATH` env var, not hardcoded
+- **Live backend**: Not yet hosted — flagged in docs/deployment.md as future work
+
+### Manual step required
+In GitHub repo: Settings → Pages → Build and deployment → Source → set to "GitHub Actions"
+
+### Files Changed
+- frontend/next.config.js
+- frontend/pages/_app.tsx, index.tsx
+- frontend/public/simulation-snapshot.json
+- frontend/Dockerfile
+- .github/workflows/deploy-pages.yml
+- docs/deployment.md
+- PROGRESS.md: this entry
