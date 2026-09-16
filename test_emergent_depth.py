@@ -225,6 +225,50 @@ class TestDeterminismEmergentDepth:
         assert orgs1[0].id == orgs2[0].id, "Same organization ID"
         assert orgs1[0].name == orgs2[0].name, "Same organization name"
 
+    def test_market_update_throttled(self):
+        """Market prices should only update every MARKET_UPDATE_INTERVAL ticks."""
+        core = make_core(seed=42)
+        core.MARKET_UPDATE_INTERVAL = 5
+        # Set up market supplies/demands so price events are emitted
+        for market in core.world.get("markets", []):
+            market.demands[ResourceType.FOOD] = 10
+            market.supplies[ResourceType.FOOD] = 5
+        
+        # Tick 0: markets should update
+        events_tick0 = core.tick_step()
+        market_events_tick0 = [e for e in events_tick0 if e.type == "price_changed"]
+        
+        # Tick 1: markets should NOT update
+        events_tick1 = core.tick_step()
+        market_events_tick1 = [e for e in events_tick1 if e.type == "price_changed"]
+        
+        # Tick 2, 3, 4: markets should NOT update
+        for _ in range(3):
+            core.tick_step()
+        
+        # Tick 5: markets should update again
+        events_tick5 = core.tick_step()
+        market_events_tick5 = [e for e in events_tick5 if e.type == "price_changed"]
+        
+        assert len(market_events_tick0) > 0, "Markets should update on tick 0"
+        assert len(market_events_tick1) == 0, "Markets should NOT update on tick 1"
+        assert len(market_events_tick5) > 0, "Markets should update on tick 5"
+        
+    def test_market_events_batched(self):
+        """Market price changes should be batched into single events per market."""
+        core = make_core(seed=42)
+        core.MARKET_UPDATE_INTERVAL = 1
+        for market in core.world.get("markets", []):
+            market.demands[ResourceType.FOOD] = 10
+            market.supplies[ResourceType.FOOD] = 5
+        
+        events = core.tick_step()
+        market_events = [e for e in events if e.type == "price_changed"]
+        
+        for e in market_events:
+            assert "price_changes" in e.data, "Event should have batched price_changes"
+            assert isinstance(e.data["price_changes"], dict), "price_changes should be a dict"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
