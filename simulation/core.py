@@ -210,16 +210,20 @@ class SimulationCore:
             agent.needs.rest = max(0, agent.needs.rest - 0.005)
             agent.needs.social = max(0, agent.needs.social - 0.002)
             agent.needs.safety = max(0, agent.needs.safety - 0.001)
-        
+            agent.health = max(0, agent.health - 0.002)
+            agent.energy = max(0, agent.energy - 0.005)
+
             events.append(self.agent_action_event("need_decay", agent.id, {
                 "hunger": agent.needs.hunger,
                 "thirst": agent.needs.thirst,
                 "rest": agent.needs.rest,
-                "social": agent.needs.social
+                "social": agent.needs.social,
+                "health": agent.health,
+                "energy": agent.energy
             }))
-        
+
         return events
-    
+
     def agent_action(self, action: str, target: str | None = None, data: dict | None = None) -> list[Event]:
         """Execute an agent action and return events."""
         events = []
@@ -230,20 +234,22 @@ class SimulationCore:
         agent = self.world["agent"]
         
         if action == "move":
-            # Move agent randomly
             dx = random.randint(-1, 1)
             dy = random.randint(-1, 1)
             agent.position.x = max(0, min(self.config.width - 1, agent.position.x + dx))
             agent.position.y = max(0, min(self.config.height - 1, agent.position.y + dy))
+            agent.energy = max(0, agent.energy - 0.05)
             
             events.append(self.agent_action_event("moved", agent.id, {
                 "x": agent.position.x,
                 "y": agent.position.y,
                 "dx": dx,
-                "dy": dy
+                "dy": dy,
+                "energy_after": agent.energy
             }))
         
         elif action == "trade":
+            agent.energy = max(0, agent.energy - 0.1)
             events.append(self.agent_action_event("traded", agent.id, {
                 "target": target,
                 "data": data or {}
@@ -251,8 +257,27 @@ class SimulationCore:
         
         elif action == "rest":
             agent.needs.rest = min(1.0, agent.needs.rest + 0.1)
+            agent.energy = min(1.0, agent.energy + 0.1)
+            agent.health = min(1.0, agent.health + 0.05)
             events.append(self.agent_action_event("rested", agent.id, {
-                "rest": agent.needs.rest
+                "rest": agent.needs.rest,
+                "energy_after": agent.energy,
+                "health_after": agent.health
+            }))
+        
+        elif action == "build":
+            agent.energy = max(0, agent.energy - 0.2)
+            events.append(self.agent_action_event("build", agent.id, {
+                "target": target
+            }))
+        
+        elif action == "explore":
+            agent.energy = max(0, agent.energy - 0.05)
+            agent.needs.safety = max(0, agent.needs.safety - 0.01)
+            events.append(self.agent_action_event("moved", agent.id, {
+                "x": agent.position.x,
+                "y": agent.position.y,
+                "energy_after": agent.energy
             }))
         
         return events
@@ -344,7 +369,31 @@ class SimulationCore:
             self._handle_organization_formed(world, event, data)
         elif event_type == "joined_organization":
             self._handle_joined_organization(world, event, data)
-    
+        elif event_type == "birth":
+            self._handle_birth(world, event, data)
+        elif event_type == "death":
+            self._handle_death(world, event, data)
+        elif event_type == "conflict":
+            self._handle_conflict(world, event, data)
+        elif event_type == "build":
+            self._handle_build(world, event, data)
+        elif event_type == "research":
+            self._handle_research(world, event, data)
+        elif event_type == "resource_depletion":
+            self._handle_resource_depletion(world, event, data)
+        elif event_type == "election":
+            self._handle_election(world, event, data)
+        elif event_type == "treaty":
+            self._handle_treaty(world, event, data)
+        elif event_type == "war":
+            self._handle_war(world, event, data)
+        elif event_type == "mine_collapse":
+            self._handle_mine_collapse(world, event, data)
+        elif event_type == "flood":
+            self._handle_flood(world, event, data)
+        elif event_type == "famine":
+            self._handle_famine(world, event, data)
+
     def _handle_resource_growth(self, world: dict, event: Event, data: dict):
         """Handle resource growth event."""
         resource_type = data.get("type")
@@ -375,8 +424,16 @@ class SimulationCore:
         """Handle agent move event."""
         x = data.get("x")
         y = data.get("y")
-        world["agent"].position.x = x
-        world["agent"].position.y = y
+        agent_id = event.source
+        if "agents" in world:
+            for agent in world["agents"]:
+                if agent.id == agent_id:
+                    agent.position.x = x
+                    agent.position.y = y
+                    break
+        elif "agent" in world:
+            world["agent"].position.x = x
+            world["agent"].position.y = y
     
     def _handle_traded(self, world: dict, event: Event, data: dict):
         """Handle trade event."""
@@ -439,6 +496,156 @@ class SimulationCore:
                     if member not in org.members:
                         org.members.append(member)
                     break
+
+    def _handle_birth(self, world: dict, event: Event, data: dict):
+        """Handle birth event — add new agent to world."""
+        agent_data = data.get("agent")
+        if agent_data and "agents" in world:
+            from ._types import Agent, Position, Personality, Needs, Skills, Inventory, Relationships
+            new_agent = Agent(
+                id=agent_data.get("id", f"agent-{len(world['agents'])}"),
+                position=Position(x=agent_data.get("x", 0), y=agent_data.get("y", 0)),
+                personality=Personality(disposition=agent_data.get("disposition", "neutral")),
+                needs=Needs(),
+                skills=Skills(),
+                inventory=Inventory(),
+                relationships=Relationships(),
+                health=1.0,
+                energy=1.0
+            )
+            world["agents"].append(new_agent)
+
+    def _handle_death(self, world: dict, event: Event, data: dict):
+        """Handle death event — remove agent from world."""
+        agent_id = data.get("agent_id")
+        if agent_id and "agents" in world:
+            world["agents"] = [a for a in world["agents"] if a.id != agent_id]
+
+    def _handle_conflict(self, world: dict, event: Event, data: dict):
+        """Handle conflict event — modify relationships and health."""
+        agent_a = data.get("agent_a")
+        agent_b = data.get("agent_b")
+        damage = data.get("damage", 0.1)
+        if agent_a and agent_b and "agents" in world:
+            for a in world["agents"]:
+                if a.id == agent_a:
+                    a.health = max(0, a.health - damage)
+                    if agent_b in a.relationships.values:
+                        a.relationships.values[agent_b] = round(a.relationships.values[agent_b] - 0.2, 2)
+                if a.id == agent_b:
+                    a.health = max(0, a.health - damage)
+                    if agent_a in a.relationships.values:
+                        a.relationships.values[agent_a] = round(a.relationships.values[agent_a] - 0.2, 2)
+
+    def _handle_build(self, world: dict, event: Event, data: dict):
+        """Handle build event — add building to world."""
+        from ._types import Building, BuildingType, Position
+        building_data = data.get("building")
+        if building_data and "buildings" not in world:
+            world["buildings"] = []
+        if building_data:
+            b = Building(
+                id=building_data.get("id", f"build-{len(world.get('buildings', []))}"),
+                type=BuildingType(building_data.get("type", "farm")),
+                regionId=building_data.get("region_id", ""),
+                position=Position(x=building_data.get("x", 0), y=building_data.get("y", 0)),
+                level=building_data.get("level", 1)
+            )
+            if "buildings" not in world:
+                world["buildings"] = []
+            world["buildings"].append(b)
+
+    def _handle_research(self, world: dict, event: Event, data: dict):
+        """Handle research event — advance technology."""
+        tech = data.get("technology")
+        if tech and "technologies" not in world:
+            world["technologies"] = []
+        if tech:
+            if "technologies" not in world:
+                world["technologies"] = []
+            if tech not in world["technologies"]:
+                world["technologies"].append(tech)
+
+    def _handle_resource_depletion(self, world: dict, event: Event, data: dict):
+        """Handle resource depletion event."""
+        resource_id = data.get("resource_id")
+        amount = data.get("amount", 1)
+        if resource_id and "resources" in world:
+            for res in world["resources"]:
+                if res.id == resource_id:
+                    res.amount = max(0, res.amount - amount)
+                    break
+
+    def _handle_election(self, world: dict, event: Event, data: dict):
+        """Handle election event."""
+        org_id = data.get("organization_id")
+        winner = data.get("winner")
+        if "organizations" in world:
+            for org in world["organizations"]:
+                if org.id == org_id:
+                    org.leader_id = winner
+                    break
+
+    def _handle_treaty(self, world: dict, event: Event, data: dict):
+        """Handle treaty event — modify relationships between organizations."""
+        org_a = data.get("org_a")
+        org_b = data.get("org_b")
+        agreement = data.get("agreement", "alliance")
+        if "organizations" in world:
+            for org in world["organizations"]:
+                if org.id == org_a:
+                    org.resources["treaties"] = org.resources.get("treaties", []) + [org_b]
+                if org.id == org_b:
+                    org.resources["treaties"] = org.resources.get("treaties", []) + [org_a]
+
+    def _handle_war(self, world: dict, event: Event, data: dict):
+        """Handle war event — declare conflict between organizations."""
+        org_a = data.get("org_a")
+        org_b = data.get("org_b")
+        if "organizations" in world:
+            for org in world["organizations"]:
+                if org.id == org_a:
+                    org.resources["war"] = org_b
+                if org.id == org_b:
+                    org.resources["war"] = org_a
+
+    def _handle_mine_collapse(self, world: dict, event: Event, data: dict):
+        """Handle mine collapse event — damage building and deplete resource."""
+        building_id = data.get("building_id")
+        if building_id and "buildings" in world:
+            for b in world["buildings"]:
+                if b.id == building_id:
+                    b.level = max(1, b.level - 1)
+                    break
+        resource_id = data.get("resource_id")
+        if resource_id and "resources" in world:
+            for res in world["resources"]:
+                if res.id == resource_id:
+                    res.amount = max(0, res.amount - 5)
+                    break
+
+    def _handle_flood(self, world: dict, event: Event, data: dict):
+        """Handle flood event — damage resources and agents in region."""
+        region_id = data.get("region_id")
+        if region_id and "resources" in world:
+            for res in world["resources"]:
+                if res.regionId == region_id:
+                    res.amount = max(0, res.amount - 3)
+        if "agents" in world:
+            for agent in world["agents"]:
+                agent.needs.safety = max(0, agent.needs.safety - 0.2)
+                agent.health = max(0, agent.health - 0.1)
+
+    def _handle_famine(self, world: dict, event: Event, data: dict):
+        """Handle famine event — deplete food resources and affect agents."""
+        if "resources" in world:
+            for res in world["resources"]:
+                if res.type.value == "food":
+                    res.amount = max(0, res.amount - 5)
+        if "agents" in world:
+            for agent in world["agents"]:
+                agent.needs.hunger = min(1.0, agent.needs.hunger + 0.3)
+                agent.health = max(0, agent.health - 0.1)
 
     # Event helper methods
 
