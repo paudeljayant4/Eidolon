@@ -3,5 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
-EXPOSE 3000
-CMD ["npm", "run", "dev"]
+ENV NEXT_PUBLIC_BASE_PATH=/eidolon
+RUN npm run build
+EXPOSE 80
+CMD ["npx", "serve", "-s", "out"]
