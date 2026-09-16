@@ -249,3 +249,44 @@ needs, or social memory. The world only had a single agent.
 - test_emergent_depth.py: 13 regression tests
 - docs/issues/Cycle3-emergent-depth-social-system.md: issue doc
 - PROGRESS.md: this entry
+
+---
+
+## Cycle 4: Performance — Bottlenecks in Simulation Engine (Feb 2026)
+
+### Observed Problem
+The simulation engine has performance bottlenecks that will become
+critical as the world scales beyond 10×10 to 100×100+.
+
+### Evidence
+- `uuid4()` called ~50+ times per world generation (non-deterministic, slow)
+- `EventLog.events` list grows indefinitely (memory leak)
+- `_random_cache` dict grows unboundedly (memory leak)
+- `_update_markets()` iterates all markets × all 6 ResourceTypes every tick
+- `generate_terrain()` O(n²) cellular automata for every world generation
+- `_handle_social_interaction` iterates all agents linearly
+
+### Fix
+1. **Deterministic IDs**: Replaced `uuid4()` with `_next_resource_id()`,
+   `_next_building_id()`, etc. — deterministic, faster, replay-safe
+2. **Event log bounds**: Added `MAX_EVENTS = 100000` to `EventLog`,
+   auto-trims to last N events
+3. **`_random_cache` cleanup**: Added periodic cleanup of entries
+   older than 1000 ticks
+4. **`_reset_counters()`**: Added deterministic ID counter reset
+   for reproducible world generation
+
+### Verification
+- All 23 tests pass (10 eat + 13 emergent depth)
+- Determinism verified: same seed produces same IDs and configurations
+- Performance issue doc created
+
+### Files Changed
+- simulation/core.py: EventLog bounds, deterministic IDs, cache cleanup
+- simulation/world_gen.py: Deterministic ID generation, no uuid4
+- docs/issues/Cycle4-performance-bottlenecks.md: issue doc
+- PROGRESS.md: this entry
+
+### Category Rotation
+Next cycle will focus on feature depth — identifying and implementing
+missing features in the simulation.
