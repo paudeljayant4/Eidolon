@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 import random
 import json
 import time
-from simulation._types import Needs, Personality, Position, Skills, Inventory, Relationships, ResourceType  # Import types from simulation
+from simulation._types import Needs, Personality, Position, Skills, Inventory, Relationships, ResourceType, Organization
 
 
 class AgentType(Enum):
@@ -163,10 +163,10 @@ class RuleBasedPlanner(BasePlanner):
         priority = 0.5
         confidence = 0.7
 
-        # Priority 1: Eat if we have food and are hungry (takes precedence over seeking)
+        # Priority 1: Eat if we have food and are hungry (takes precedence)
         if needs.get("inventory_food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
             action = "eat"
-            priority = 0.7
+            priority = 0.8
             confidence = 0.8
 
         # Priority 2: Satisfy urgent needs (only if we have no food to eat)
@@ -183,13 +183,14 @@ class RuleBasedPlanner(BasePlanner):
             confidence = 0.8
             priority = 0.8
 
-        # Priority 2: Eat if we have food and are moderately hungry
-        elif needs.get("inventory_food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
-            action = "eat"
-            priority = 0.7
-            confidence = 0.8
+        # Priority 3: Social need — socialize if social is low and nearby agents exist
+        elif needs.get("social", 1.0) < 0.3 and perception.nearby_agents:
+            action = "socialize"
+            target = perception.nearby_agents[0]
+            priority = 0.5
+            confidence = 0.6
 
-        # Priority 3: Economic actions
+        # Priority 4: Economic actions
         elif perception.visible_resources.get("wood", 0) > 50:
             action = "gather_wood"
             priority = 0.6
@@ -203,14 +204,14 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.5
             confidence = 0.6
 
-        # Priority 4: Social actions
-        elif perception.nearby_agents:
+        # Priority 5: Social actions (general, not urgent)
+        elif perception.nearby_agents and needs.get("social", 1.0) < 0.6:
             action = "socialize"
             target = perception.nearby_agents[0]
             priority = 0.4
             confidence = 0.5
 
-        # Priority 5: Explore
+        # Priority 6: Explore
         else:
             action = "explore"
             priority = 0.3
@@ -270,15 +271,17 @@ Current needs: {needs_str}
 Memory: {memory_context}
 World state: {json.dumps(world_state, indent=2)}
 
-Choose an action: move, seek_food, seek_water, rest, gather_wood, gather_iron, 
-gather_food, socialize, explore, trade. Respond with just the action name."""
+Choose an action: move, seek_food, seek_water, rest, gather_wood, gather_iron,
+gather_food, socialize, explore, trade, form_organization, join_organization.
+Respond with just the action name."""
 
     def _parse_llm_response(self, response: str) -> PlannerDecision:
         action = response.strip().lower()
         valid_actions = [
             "move", "seek_food", "seek_water", "rest",
             "gather_wood", "gather_iron", "gather_food",
-            "eat", "socialize", "explore", "trade"
+            "eat", "socialize", "explore", "trade",
+            "form_organization", "join_organization"
         ]
         if action not in valid_actions:
             action = "move"
@@ -405,10 +408,37 @@ class Agent:
             })
 
         elif action == "socialize":
-            events.append({
-                "type": "social_interaction",
-                "data": {"action": "socialize", "target": target or "unknown"}
-            })
+            if target and target != "unknown":
+                self.needs.social = min(1.0, self.needs.social + 0.1)
+                disposition = self.personality.disposition
+                if disposition == "friendly":
+                    weight = 0.3
+                elif disposition == "hostile":
+                    weight = -0.3
+                else:
+                    weight = 0.05
+                self.relationships.values[target] = round(
+                    self.relationships.values.get(target, 0.0) + weight, 2
+                )
+                self.memory.add_social(
+                    related_agent_id=target,
+                    content={"action": "socialize", "target": target, "weight": weight},
+                    emotional_weight=weight
+                )
+                events.append({
+                    "type": "social_interaction",
+                    "data": {
+                        "action": "socialize",
+                        "target": target,
+                        "relationship_value": self.relationships.values[target],
+                        "social_need_after": self.needs.social
+                    }
+                })
+            else:
+                events.append({
+                    "type": "social_interaction",
+                    "data": {"action": "socialize", "target": "none", "reason": "no nearby agents"}
+                })
 
         elif action == "explore":
             dx = random.randint(-1, 1)
@@ -459,6 +489,29 @@ class Agent:
                         "type": "hunger_motivation",
                         "data": {"action": "eat", "reason": "no food available anywhere"}
                     })
+
+        elif action == "form_organization":
+            org_id = f"org-{self.id}-{int(time.time()*1000)}"
+            self.organization = org_id
+            events.append({
+                "type": "organization_formed",
+                "data": {"organization_id": org_id, "leader": self.id, "name": f"{self.id}-guild"}
+            })
+            self.memory.add_episodic(content={"action": "form_organization", "org_id": org_id})
+
+        elif action == "join_organization":
+            if target and target != "unknown":
+                self.organization = target
+                events.append({
+                    "type": "joined_organization",
+                    "data": {"organization_id": target, "member": self.id}
+                })
+                self.memory.add_episodic(content={"action": "join_organization", "org_id": target})
+            else:
+                events.append({
+                    "type": "hunger_motivation",
+                    "data": {"action": "join_organization", "reason": "no organization to join"}
+                })
 
         return events
 

@@ -4,7 +4,7 @@ from ._types import (
     WorldConfig, TerrainType, ResourceType, Position, Region,
     Building, BuildingType, Resource, Agent, Market,
     Event, EventType, Needs, Personality, Skills, Inventory,
-    Relationships, City
+    Relationships, City, Organization
 )
 AgentId = str
 
@@ -217,29 +217,54 @@ def generate_world(config: WorldConfig) -> dict:
             regionId=region.id
         ))
     
-    # Create a central agent
-    agent = Agent(
-        id="agent-0",
-        position=Position(config.width // 2, config.height // 2),
-        personality=Personality(
-            traits={"openness": 0.5, "conscientiousness": 0.5, 
-                    "extraversion": 0.5, "agreeableness": 0.5, "neuroticism": 0.5},
-            disposition="neutral",
-            riskTolerance=0.5,
-            altruism=0.5
-        ),
-        needs=Needs(),
-        skills=Skills(values={}),
-        inventory=Inventory(),
-        relationships=Relationships(values={})
-    )
-    
+# Create multiple agents
+    agents: list[Agent] = []
+    dispositions = ["friendly", "neutral", "hostile"]
+    for i in range(5):
+        disp = random.choice(dispositions)
+        agents.append(Agent(
+            id=f"agent-{i}",
+            position=Position(
+                random.randint(0, config.width - 1),
+                random.randint(0, config.height - 1)
+            ),
+            personality=Personality(
+                traits={"openness": random.random(), "conscientiousness": random.random(),
+                        "extraversion": random.random(), "agreeableness": random.random(),
+                        "neuroticism": random.random()},
+                disposition=disp,
+                riskTolerance=random.random(),
+                altruism=random.random()
+            ),
+            needs=Needs(),
+            skills=Skills(values={}),
+            inventory=Inventory(),
+            relationships=Relationships(values={}),
+            organization=None,
+            health=1.0,
+            energy=1.0,
+        ))
+
+    # Create organizations
+    organizations: list[Organization] = []
+    org_id = f"org-main-{config.seed}"
+    organizations.append(Organization(
+        id=org_id, name="Main Guild", leader_id="agent-0",
+        organization_type="guild", members=["agent-0"]
+    ))
+    # Assign organization to agents
+    for i, agent in enumerate(agents):
+        if i == 0:
+            agent.organization = org_id
+
     return {
         "config": config,
         "regions": regions,
         "resources": resources,
         "cities": cities,
         "markets": markets,
-        "agent": agent,
+        "agents": agents,
+        "agent": agents[0] if agents else None,
+        "organizations": organizations,
         "events": []
     }

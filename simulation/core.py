@@ -6,7 +6,7 @@ from uuid import uuid4
 from ._types import (
     WorldConfig, Position, Region, Building, BuildingType, Resource,
     ResourceType, Agent, AgentId, Market, Event, EventType,
-    Needs, Personality, Skills, Inventory, Relationships,
+    Needs, Personality, Skills, Inventory, Relationships, Organization,
 )
 
 
@@ -108,12 +108,18 @@ class SimulationCore:
         if self.world is None:
             return events
         
-        # Resource regeneration based on terrain
+        # Resource regeneration based on terrain (timer-based for performance)
+        GROWTH_INTERVAL = 5  # regrow every 5 ticks
+        
         for resource in self.world["resources"]:
-            # Natural regeneration
-            if resource.amount < resource.maxAmount:
-                growth_rate = 1  # base growth
-                resource.amount = min(resource.maxAmount, resource.amount + growth_rate)
+            # Decrement timer each tick
+            if resource.growth_timer > 0:
+                resource.growth_timer -= 1
+            
+            # Only regrow when timer reaches 0
+            if resource.growth_timer <= 0 and resource.amount < resource.maxAmount:
+                resource.amount = min(resource.maxAmount, resource.amount + 1)
+                resource.growth_timer = GROWTH_INTERVAL
                 events.append(self.resource_event("resource_growth", resource.id, {
                     "type": resource.type.value,
                     "amount": resource.amount,
@@ -158,20 +164,26 @@ class SimulationCore:
         if self.world is None:
             return events
         
-        agent = self.world["agent"]
+        agents = self.world.get("agents", [])
+        primary_agent = self.world.get("agent", None)
+        all_agents = agents if agents else ([primary_agent] if primary_agent else [])
         
-        # Basic agent need fulfillment
-        if agent.needs.hunger < 0.5:
-            # Try to find food at nearest market
-            events.append(self.agent_action_event("hunger_motivation", agent.id, {
-                "hunger": agent.needs.hunger,
-                "action": "seek_food"
-            }))
-        if agent.needs.thirst < 0.5:
-            events.append(self.agent_action_event("thirst_motivation", agent.id, {
-                "thirst": agent.needs.thirst,
-                "action": "seek_water"
-            }))
+        for agent in all_agents:
+            if agent.needs.hunger < 0.5:
+                events.append(self.agent_action_event("hunger_motivation", agent.id, {
+                    "hunger": agent.needs.hunger,
+                    "action": "seek_food"
+                }))
+            if agent.needs.thirst < 0.5:
+                events.append(self.agent_action_event("thirst_motivation", agent.id, {
+                    "thirst": agent.needs.thirst,
+                    "action": "seek_water"
+                }))
+            if agent.needs.social < 0.3:
+                events.append(self.agent_action_event("social_motivation", agent.id, {
+                    "social": agent.needs.social,
+                    "action": "socialize"
+                }))
         
         return events
     
@@ -181,20 +193,23 @@ class SimulationCore:
         if self.world is None:
             return events
         
-        agent = self.world["agent"]
+        agents = self.world.get("agents", [])
+        primary_agent = self.world.get("agent", None)
+        all_agents = agents if agents else ([primary_agent] if primary_agent else [])
         
-        # Natural need decay
-        agent.needs.hunger = max(0, agent.needs.hunger - 0.01)
-        agent.needs.thirst = max(0, agent.needs.thirst - 0.01)
-        agent.needs.rest = max(0, agent.needs.rest - 0.005)
-        agent.needs.social = max(0, agent.needs.social - 0.002)
-        agent.needs.safety = max(0, agent.needs.safety - 0.001)
+        for agent in all_agents:
+            agent.needs.hunger = max(0, agent.needs.hunger - 0.01)
+            agent.needs.thirst = max(0, agent.needs.thirst - 0.01)
+            agent.needs.rest = max(0, agent.needs.rest - 0.005)
+            agent.needs.social = max(0, agent.needs.social - 0.002)
+            agent.needs.safety = max(0, agent.needs.safety - 0.001)
         
-        events.append(self.agent_action_event("need_decay", agent.id, {
-            "hunger": agent.needs.hunger,
-            "thirst": agent.needs.thirst,
-            "rest": agent.needs.rest
-        }))
+            events.append(self.agent_action_event("need_decay", agent.id, {
+                "hunger": agent.needs.hunger,
+                "thirst": agent.needs.thirst,
+                "rest": agent.needs.rest,
+                "social": agent.needs.social
+            }))
         
         return events
     
@@ -312,6 +327,16 @@ class SimulationCore:
             self._handle_rested(world, event, data)
         elif event_type == "need_decay":
             self._handle_need_decay(world, event, data)
+        elif event_type == "social_interaction":
+            self._handle_social_interaction(world, event, data)
+        elif event_type == "fed":
+            self._handle_fed(world, event, data)
+        elif event_type == "resource_gathered":
+            self._handle_resource_gathered(world, event, data)
+        elif event_type == "organization_formed":
+            self._handle_organization_formed(world, event, data)
+        elif event_type == "joined_organization":
+            self._handle_joined_organization(world, event, data)
     
     def _handle_resource_growth(self, world: dict, event: Event, data: dict):
         """Handle resource growth event."""
@@ -363,9 +388,53 @@ class SimulationCore:
         world["agent"].needs.hunger = hunger
         world["agent"].needs.thirst = thirst
         world["agent"].needs.rest = rest
-    
+
+    def _handle_social_interaction(self, world: dict, event: Event, data: dict):
+        """Handle social interaction event."""
+        agent_id = event.source
+        target = data.get("target")
+        if target and "agents" in world:
+            for agent in world["agents"]:
+                if agent.id == target:
+                    relationship_val = data.get("relationship_value", 0.0)
+                    agent.relationships.values[agent_id] = round(
+                        agent.relationships.values.get(agent_id, 0.0) + relationship_val * 0.1, 2
+                    )
+                    break
+
+    def _handle_fed(self, world: dict, event: Event, data: dict):
+        """Handle fed event."""
+        pass  # Agent state handled by Agent.act()
+
+    def _handle_resource_gathered(self, world: dict, event: Event, data: dict):
+        """Handle resource gathered event."""
+        pass  # Resource state handled by Agent.act()
+
+    def _handle_organization_formed(self, world: dict, event: Event, data: dict):
+        """Handle organization formed event."""
+        org_id = data.get("organization_id")
+        org_name = data.get("name")
+        leader = data.get("leader")
+        if "organizations" not in world:
+            world["organizations"] = []
+        org = Organization(
+            id=org_id, name=org_name, leader_id=leader, organization_type="guild"
+        )
+        world["organizations"].append(org)
+
+    def _handle_joined_organization(self, world: dict, event: Event, data: dict):
+        """Handle joined organization event."""
+        org_id = data.get("organization_id")
+        member = data.get("member")
+        if "organizations" in world:
+            for org in world["organizations"]:
+                if org.id == org_id:
+                    if member not in org.members:
+                        org.members.append(member)
+                    break
+
     # Event helper methods
-    
+
     def resource_event(self, event_type: str, resource_id: str, data: dict) -> Event:
         return self.event_log.emit(event_type, f"resource-{resource_id}", None, data)
     

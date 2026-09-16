@@ -107,6 +107,7 @@ class Resource:
     maxAmount: int
     position: Position
     regionId: str
+    growth_timer: int = 0
 
 
 @dataclass
@@ -176,6 +177,16 @@ class City:
     buildings: List[str] = field(default_factory=list)
     resources: List[ResourceType] = field(default_factory=list)
     position: Position = field(default_factory=Position)
+
+
+@dataclass
+class Organization:
+    id: str
+    name: str
+    members: list[str] = field(default_factory=list)
+    leader_id: str = ""
+    organization_type: str = "guild"
+    resources: Dict[ResourceType, int] = field(default_factory=dict)
 
 
 @dataclass
