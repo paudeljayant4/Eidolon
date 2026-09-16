@@ -197,3 +197,55 @@ acquire food from visible resources or the market.
 - test_agent_eat.py: 10 regression tests
 - compare_before_after.py: before/after comparison script
 - PROGRESS.md: this entry
+
+### Category Rotation
+Next cycle will focus on performance — checking for bottlenecks
+in the simulation engine and optimizing where needed.
+
+---
+
+## Cycle 3: Emergent Depth — Multi-Agent World & Social System (Feb 2026)
+
+### Observed Problem
+The simulation had data structures for social dynamics (relationships,
+social memory, organizations) but no mechanisms to make them emerge.
+Agents could "socialize" but the action had no effect on relationships,
+needs, or social memory. The world only had a single agent.
+
+### Evidence
+- 1 agent in world (agent-0 only)
+- Relationship values never modified (always `{}`)
+- Social memory tier always empty
+- Organizations field always `None`
+- Socialize action emitted `social_interaction` event but did nothing
+- No conflict mechanism implemented
+- No organization/joining mechanics
+
+### Fix
+1. **Multi-agent world**: `generate_world()` now creates 5 agents with
+   randomized dispositions (friendly, neutral, hostile)
+2. **Organization system**: Main Guild created with agent-0 as leader
+3. **Socialize action**: Now modifies `relationships.values[target]`,
+   creates `SocialMemory` entries, updates `needs.social`
+4. **Social need in planner**: Added as priority (social < 0.3 triggers
+   socialize, social < 0.6 triggers general socialize)
+5. **Organization actions**: `form_organization` and `join_organization`
+6. **Event handlers**: `social_interaction`, `fed`, `resource_gathered`,
+   `organization_formed`, `joined_organization` in `SimulationCore`
+7. **Social memory**: `add_social()` now called from socialize action
+
+### Verification
+- **13 regression tests pass**: multi-agent world, socialize mechanics,
+  organization mechanics, determinism
+- **23 total tests pass** (10 eat + 13 emergent depth)
+- **Determinism verified**: same seed produces same agent configurations
+- **Multi-agent world**: 5 agents, 1 organization, social dynamics active
+
+### Files Changed
+- simulation/world_gen.py: multi-agent world + organizations
+- simulation/core.py: multi-agent processing, new event handlers
+- simulation/_types.py: Organization dataclass
+- agents/_agent.py: socialize action, organization actions, planner
+- test_emergent_depth.py: 13 regression tests
+- docs/issues/Cycle3-emergent-depth-social-system.md: issue doc
+- PROGRESS.md: this entry
