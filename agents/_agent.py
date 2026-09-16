@@ -272,8 +272,8 @@ Memory: {memory_context}
 World state: {json.dumps(world_state, indent=2)}
 
 Choose an action: move, seek_food, seek_water, rest, gather_wood, gather_iron,
-gather_food, socialize, explore, trade, form_organization, join_organization.
-Respond with just the action name."""
+gather_food, socialize, explore, trade, form_organization,
+join_organization, build. Respond with just the action name."""
 
     def _parse_llm_response(self, response: str) -> PlannerDecision:
         action = response.strip().lower()
@@ -281,7 +281,7 @@ Respond with just the action name."""
             "move", "seek_food", "seek_water", "rest",
             "gather_wood", "gather_iron", "gather_food",
             "eat", "socialize", "explore", "trade",
-            "form_organization", "join_organization"
+            "form_organization", "join_organization", "build"
         ]
         if action not in valid_actions:
             action = "move"
@@ -381,10 +381,42 @@ class Agent:
 
         elif action == "rest":
             self.needs.rest = min(1.0, self.needs.rest + 0.1)
+            self.energy = min(1.0, self.energy + 0.1)
+            self.health = min(1.0, self.health + 0.05)
             events.append({
                 "type": "rested",
-                "data": {"rest": self.needs.rest}
+                "data": {"rest": self.needs.rest, "energy_after": self.energy, "health_after": self.health}
             })
+
+        elif action == "trade":
+            if target and target != "unknown":
+                market = None
+                for m in core.world.get("markets", []):
+                    if m.id == target or m.regionId == target:
+                        market = m
+                        break
+                if market:
+                    food_price = market.prices.get("food", 1.0)
+                    if self.inventory.resources.get("food", 0) > 0:
+                        self.inventory.resources["food"] -= 1
+                        self.needs.hunger = min(1.0, self.needs.hunger + 0.1)
+                        self.health = min(1.0, self.health + 0.05)
+                        events.append({"type": "traded", "data": {"action": "sell_food", "price": food_price}})
+                    else:
+                        self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 1
+                        self.needs.hunger = max(0, self.needs.hunger - 0.01)
+                        events.append({"type": "traded", "data": {"action": "buy_food", "price": food_price}})
+                else:
+                    events.append({"type": "hunger_motivation", "data": {"action": "trade", "reason": "no market"}})
+            else:
+                events.append({"type": "hunger_motivation", "data": {"action": "trade", "reason": "no target"}})
+
+        elif action == "build":
+            if target and target != "unknown":
+                self.energy = max(0, self.energy - 0.2)
+                events.append({"type": "build", "data": {"building_type": "farm", "location": target}})
+            else:
+                events.append({"type": "hunger_motivation", "data": {"action": "build", "reason": "no target"}})
 
         elif action == "gather_wood":
             self.inventory.resources["wood"] = self.inventory.resources.get("wood", 0) + 10
@@ -447,9 +479,12 @@ class Agent:
             new_y = max(0, min(core.config.height - 1, self.position.y + dy))
             self.position.x = new_x
             self.position.y = new_y
+            self.energy = max(0, self.energy - 0.05)
+            self.needs.safety = max(0, self.needs.safety - 0.01)
             events.append({
                 "type": "moved",
-                "data": {"x": self.position.x, "y": self.position.y, "dx": dx, "dy": dy}
+                "data": {"x": self.position.x, "y": self.position.y, "dx": dx, "dy": dy,
+                         "energy_after": self.energy}
             })
 
         elif action == "eat":
@@ -457,9 +492,12 @@ class Agent:
             if food_amount > 0:
                 self.inventory.resources["food"] = food_amount - 1
                 self.needs.hunger = min(1.0, self.needs.hunger + 0.2)
+                self.health = min(1.0, self.health + 0.1)
+                self.energy = min(1.0, self.energy + 0.05)
                 events.append({
                     "type": "fed",
-                    "data": {"food_consumed": 1, "hunger_after": self.needs.hunger}
+                    "data": {"food_consumed": 1, "hunger_after": self.needs.hunger,
+                             "health_after": self.health, "energy_after": self.energy}
                 })
             else:
                 food_acquired = False
