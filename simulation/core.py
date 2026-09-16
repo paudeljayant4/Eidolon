@@ -98,8 +98,8 @@ class SimulationCore:
         # 2. Process market price updates
         events.extend(self._update_markets())
         
-        # 3. Agent actions
-        events.extend(self._process_agents())
+        # 3. Agent decisions and actions
+        events.extend(self._process_agent_decisions())
         
         # 4. Decay needs
         events.extend(self._decay_needs())
@@ -109,6 +109,44 @@ class SimulationCore:
             event.timestamp = float(self.tick)
         
         self.tick += 1
+        return events
+    
+    def _process_agent_decisions(self) -> list[Event]:
+        """Process agent decisions and actions for this tick."""
+        events = []
+        if self.world is None:
+            return events
+        
+        agents = self.world.get("agents", [])
+        primary_agent = self.world.get("agent", None)
+        all_agents = agents if agents else ([primary_agent] if primary_agent else [])
+        
+        for agent in all_agents:
+            # Agent perceives world
+            perception = agent.perceive(self.world)
+            
+            # Build needs dict for planner
+            needs = {
+                "hunger": agent.needs.hunger,
+                "thirst": agent.needs.thirst,
+                "rest": agent.needs.rest,
+                "social": agent.needs.social,
+                "safety": agent.needs.safety,
+                "energy": agent.energy,
+                "inventory_food": agent.inventory.resources.get("food", 0),
+                "inventory_water": agent.inventory.resources.get("water", 0),
+                "inventory_wood": agent.inventory.resources.get("wood", 0),
+                "inventory_iron": agent.inventory.resources.get("iron", 0),
+            }
+            
+            # Agent decides
+            decision = agent.decide(perception, needs)
+            
+            # Agent acts
+            action_events = agent.act(decision, self)
+            for ae in action_events:
+                events.append(self.agent_action_event(ae["type"], agent.id, ae.get("data", {})))
+        
         return events
     
     def _process_resources(self) -> list[Event]:

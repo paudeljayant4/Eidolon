@@ -174,29 +174,58 @@ class RuleBasedPlanner(BasePlanner):
             action = "seek_food"
             confidence = 0.9
             priority = 1.0
+
+        # Rest when energy is low (highest priority after urgent needs)
+        elif needs.get("rest", 1.0) < 0.3 and needs.get("energy", 1.0) < 0.5:
+            action = "rest"
+            confidence = 0.9
+            priority = 1.0
+
+        # Priority 3: Social need — socialize if social is low
+        elif needs.get("social", 1.0) < 0.5:
+            action = "socialize"
+            target = perception.nearby_agents[0] if perception.nearby_agents else None
+            priority = 0.5
+            confidence = 0.6
+
         elif needs.get("thirst", 1.0) < 0.3:
             action = "seek_water"
             confidence = 0.9
             priority = 1.0
-        elif needs.get("rest", 1.0) < 0.3:
-            action = "rest"
-            confidence = 0.8
-            priority = 0.8
 
-        # Priority 3: Social need — socialize if social is low and nearby agents exist
-        elif needs.get("social", 1.0) < 0.3 and perception.nearby_agents:
-            action = "socialize"
-            target = perception.nearby_agents[0]
-            priority = 0.5
+        # Drink water when thirsty and have water in inventory
+        elif needs.get("thirst", 1.0) < 0.5 and needs.get("inventory_water", 0) > 0:
+            action = "drink"
+            priority = 0.8
+            confidence = 0.8
+
+        # Priority 4: Trade - buy food when hungry and market has food
+        elif needs.get("hunger", 1.0) < 0.8 and needs.get("inventory_food", 0) == 0 and perception.market_prices.get("food", 0) > 0:
+            action = "trade"
+            target = self._find_market_target(perception)
+            priority = 0.8
+            confidence = 0.8
+        # Trade - sell surplus food
+        elif needs.get("inventory_food", 0) > 5 and perception.market_prices.get("food", 0) > 0:
+            action = "trade"
+            target = self._find_market_target(perception)
+            priority = 0.7
+            confidence = 0.7
+
+        # Priority 5: Build - construct farm when wood available and energy sufficient
+        elif needs.get("inventory_wood", 0) > 30 and needs.get("energy", 1.0) > 0.3:
+            action = "build"
+            target = "farm"
+            priority = 0.6
             confidence = 0.6
 
-        # Priority 4: Economic actions
-        elif perception.visible_resources.get("wood", 0) > 50:
-            action = "gather_wood"
-            priority = 0.6
-            confidence = 0.7
+        # Priority 6: Economic actions - gather resources
         elif perception.visible_resources.get("iron", 0) > 20:
             action = "gather_iron"
+            priority = 0.6
+            confidence = 0.7
+        elif perception.visible_resources.get("wood", 0) > 30:
+            action = "gather_wood"
             priority = 0.6
             confidence = 0.7
         elif perception.visible_resources.get("food", 0) > 30:
@@ -204,14 +233,14 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.5
             confidence = 0.6
 
-        # Priority 5: Social actions (general, not urgent)
-        elif perception.nearby_agents and needs.get("social", 1.0) < 0.6:
+        # Priority 7: Social actions (general, not urgent)
+        elif perception.nearby_agents and needs.get("social", 1.0) < 0.7:
             action = "socialize"
             target = perception.nearby_agents[0]
             priority = 0.4
             confidence = 0.5
 
-        # Priority 6: Explore
+        # Priority 8: Explore
         else:
             action = "explore"
             priority = 0.3
@@ -223,6 +252,14 @@ class RuleBasedPlanner(BasePlanner):
             priority=priority,
             confidence=confidence
         )
+    
+    def _find_market_target(self, perception: Perception) -> str | None:
+        """Find a market to trade with - returns first market region ID."""
+        # Return first market region ID from perception
+        if perception.market_prices:
+            # Return a generic marker; the act method will find the first market
+            return "any"
+        return None
 
 
 class LLMBasedPlanner(BasePlanner):
@@ -273,14 +310,14 @@ World state: {json.dumps(world_state, indent=2)}
 
 Choose an action: move, seek_food, seek_water, rest, gather_wood, gather_iron,
 gather_food, socialize, explore, trade, form_organization,
-join_organization, build. Respond with just the action name."""
+join_organization, build, drink. Respond with just the action name."""
 
     def _parse_llm_response(self, response: str) -> PlannerDecision:
         action = response.strip().lower()
         valid_actions = [
             "move", "seek_food", "seek_water", "rest",
             "gather_wood", "gather_iron", "gather_food",
-            "eat", "socialize", "explore", "trade",
+            "eat", "drink", "socialize", "explore", "trade",
             "form_organization", "join_organization", "build"
         ]
         if action not in valid_actions:
@@ -309,16 +346,28 @@ class Agent:
         perception = Perception()
         if "resources" in world_state:
             for res in world_state["resources"]:
-                rtype = res.type
+                rtype = res.type.value  # Use string value
                 if rtype not in perception.visible_resources:
                     perception.visible_resources[rtype] = 0
                 perception.visible_resources[rtype] += res.amount
         if "markets" in world_state:
             for market in world_state["markets"]:
                 for rtype, price in market.prices.items():
-                    perception.market_prices[rtype] = price
+                    perception.market_prices[rtype.value] = price  # Use string value
         if "needs" in world_state:
             perception.needs_state = world_state["needs"]
+        
+        # Detect nearby agents within radius 15 (increased for larger worlds)
+        perception.nearby_agents = []
+        if "agents" in world_state:
+            for other in world_state["agents"]:
+                if other.id != self.id:
+                    dx = other.position.x - self.position.x
+                    dy = other.position.y - self.position.y
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist <= 15.0:
+                        perception.nearby_agents.append(other.id)
+        
         return perception
 
     def decide(self, perception: Perception, needs: dict) -> PlannerDecision:
@@ -374,14 +423,39 @@ class Agent:
                 })
 
         elif action == "seek_water":
-            events.append({
-                "type": "thirst_motivation",
-                "data": {"action": "seek_water", "thirst": self.needs.thirst}
-            })
+            water_acquired = False
+            for res in core.world.get("resources", []):
+                if res.type == ResourceType.WATER and res.amount > 0:
+                    self.inventory.resources["water"] = self.inventory.resources.get("water", 0) + 15
+                    res.amount -= 1
+                    self.energy = max(0, self.energy - 0.1)
+                    events.append({
+                        "type": "resource_gathered",
+                        "data": {"resource": "water", "amount": 15}
+                    })
+                    water_acquired = True
+                    break
+            if not water_acquired:
+                for market in core.world.get("markets", []):
+                    if market.supplies.get(ResourceType.WATER, 0) > 0:
+                        self.inventory.resources["water"] = self.inventory.resources.get("water", 0) + 10
+                        market.supplies[ResourceType.WATER] -= 1
+                        self.energy = max(0, self.energy - 0.1)
+                        events.append({
+                            "type": "resource_gathered",
+                            "data": {"resource": "water", "amount": 10, "source": "market"}
+                        })
+                        water_acquired = True
+                        break
+            if not water_acquired:
+                events.append({
+                    "type": "thirst_motivation",
+                    "data": {"action": "seek_water", "thirst": self.needs.thirst, "reason": "no water available"}
+                })
 
         elif action == "rest":
             self.needs.rest = min(1.0, self.needs.rest + 0.1)
-            self.energy = min(1.0, self.energy + 0.1)
+            self.energy = min(1.0, self.energy + 0.15)
             self.health = min(1.0, self.health + 0.05)
             events.append({
                 "type": "rested",
@@ -392,7 +466,7 @@ class Agent:
             if target and target != "unknown":
                 market = None
                 for m in core.world.get("markets", []):
-                    if m.id == target or m.regionId == target:
+                    if m.id == target or m.regionId == target or target == "any":
                         market = m
                         break
                 if market:
@@ -413,8 +487,18 @@ class Agent:
 
         elif action == "build":
             if target and target != "unknown":
-                self.energy = max(0, self.energy - 0.2)
-                events.append({"type": "build", "data": {"building_type": "farm", "location": target}})
+                # Consume resources for building
+                if target == "farm" and self.inventory.resources.get("wood", 0) >= 20:
+                    self.inventory.resources["wood"] -= 20
+                    self.energy = max(0, self.energy - 0.15)
+                    events.append({"type": "build", "data": {"building_type": "farm", "location": target}})
+                elif self.inventory.resources.get("wood", 0) >= 20:
+                    # Generic build for other types
+                    self.inventory.resources["wood"] -= 20
+                    self.energy = max(0, self.energy - 0.2)
+                    events.append({"type": "build", "data": {"building_type": target, "location": target}})
+                else:
+                    events.append({"type": "hunger_motivation", "data": {"action": "build", "reason": "insufficient resources"}})
             else:
                 events.append({"type": "hunger_motivation", "data": {"action": "build", "reason": "no target"}})
 
@@ -493,7 +577,7 @@ class Agent:
                 self.inventory.resources["food"] = food_amount - 1
                 self.needs.hunger = min(1.0, self.needs.hunger + 0.2)
                 self.health = min(1.0, self.health + 0.1)
-                self.energy = min(1.0, self.energy + 0.05)
+                self.energy = min(1.0, self.energy + 0.1)
                 events.append({
                     "type": "fed",
                     "data": {"food_consumed": 1, "hunger_after": self.needs.hunger,
@@ -526,6 +610,47 @@ class Agent:
                     events.append({
                         "type": "hunger_motivation",
                         "data": {"action": "eat", "reason": "no food available anywhere"}
+                    })
+
+        elif action == "drink":
+            water_amount = self.inventory.resources.get("water", 0)
+            if water_amount > 0:
+                self.inventory.resources["water"] = water_amount - 1
+                self.needs.thirst = min(1.0, self.needs.thirst + 0.2)
+                self.health = min(1.0, self.health + 0.1)
+                self.energy = min(1.0, self.energy + 0.1)
+                events.append({
+                    "type": "drank",
+                    "data": {"water_consumed": 1, "thirst_after": self.needs.thirst,
+                             "health_after": self.health, "energy_after": self.energy}
+                })
+            else:
+                water_acquired = False
+                for res in core.world.get("resources", []):
+                    if res.type == ResourceType.WATER and res.amount > 0:
+                        self.inventory.resources["water"] = self.inventory.resources.get("water", 0) + 15
+                        res.amount -= 1
+                        events.append({
+                            "type": "resource_gathered",
+                            "data": {"resource": "water", "amount": 15, "reason": "drink_redirect"}
+                        })
+                        water_acquired = True
+                        break
+                if not water_acquired:
+                    for market in core.world.get("markets", []):
+                        if market.supplies.get(ResourceType.WATER, 0) > 0:
+                            self.inventory.resources["water"] = self.inventory.resources.get("water", 0) + 10
+                            market.supplies[ResourceType.WATER] -= 1
+                            events.append({
+                                "type": "resource_gathered",
+                                "data": {"resource": "water", "amount": 10, "source": "market", "reason": "drink_redirect"}
+                            })
+                            water_acquired = True
+                            break
+                if not water_acquired:
+                    events.append({
+                        "type": "thirst_motivation",
+                        "data": {"action": "drink", "reason": "no water available anywhere"}
                     })
 
         elif action == "form_organization":

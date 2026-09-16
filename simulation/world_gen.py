@@ -1,10 +1,11 @@
 import random
 from ._types import (
     WorldConfig, TerrainType, ResourceType, Position, Region,
-    Building, BuildingType, Resource, Agent, Market,
+    Building, BuildingType, Resource, Market,
     Event, EventType, Needs, Personality, Skills, Inventory,
     Relationships, City, Organization
 )
+from agents._agent import Agent
 AgentId = str
 
 
@@ -105,6 +106,16 @@ def generate_resources(
             tile = terrain[x][y]
             pos = Position(x, y)
             
+            # Every region gets a base water resource
+            resources.append(Resource(
+                id=_next_resource_id(),
+                type=ResourceType.WATER,
+                amount=random.randint(20, 50),
+                maxAmount=100,
+                position=pos,
+                regionId=f"region-{x}-{y}"
+            ))
+            
             if tile == TerrainType.FOREST:
                 resources.append(Resource(
                     id=_next_resource_id(),
@@ -142,6 +153,7 @@ def generate_resources(
                     regionId=f"region-{x}-{y}"
                 ))
             elif tile == TerrainType.RIVER:
+                # Rivers get bonus water
                 resources.append(Resource(
                     id=_next_resource_id(),
                     type=ResourceType.WATER,
@@ -205,6 +217,7 @@ BUILDING_PRODUCTION = {
     BuildingType.BARRACKS: (None, ResourceType.FOOD),
     BuildingType.TEMPLE: (None, ResourceType.WOOD),
     BuildingType.PALACE: (None, None),
+    BuildingType.WELL: (ResourceType.WATER, None),
 }
 
 def _get_building_production(btype: BuildingType):
@@ -229,11 +242,11 @@ def generate_cities(
         elif region.terrain == TerrainType.MOUNTAIN:
             building_types = [BuildingType.MINE, BuildingType.WORKSHOP]
         elif region.terrain == TerrainType.DESERT:
-            building_types = [BuildingType.QUARRY]
+            building_types = [BuildingType.QUARRY, BuildingType.WELL]
         elif region.terrain == TerrainType.PLAINS:
-            building_types = [BuildingType.FARM, BuildingType.MARKET]
+            building_types = [BuildingType.FARM, BuildingType.MARKET, BuildingType.WELL]
         elif region.terrain == TerrainType.RIVER:
-            building_types = [BuildingType.FARM]
+            building_types = [BuildingType.FARM, BuildingType.WELL]
         
         if BuildingType.MARKET not in building_types:
             building_types.insert(0, BuildingType.MARKET)
@@ -283,10 +296,18 @@ def generate_world(config: WorldConfig) -> dict:
     # Create markets for each region
     markets: list[Market] = []
     for region in regions:
-        markets.append(Market(
+        m = Market(
             id=f"market-{region.id}",
             regionId=region.id
-        ))
+        )
+        # Initialize with some supplies and demands for active trading
+        m.supplies[ResourceType.FOOD] = 50
+        m.demands[ResourceType.FOOD] = 30
+        m.supplies[ResourceType.WOOD] = 20
+        m.demands[ResourceType.WOOD] = 15
+        m.supplies[ResourceType.IRON] = 10
+        m.demands[ResourceType.IRON] = 5
+        markets.append(m)
 
     # Create multiple agents
     agents: list[Agent] = []

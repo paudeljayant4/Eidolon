@@ -38,6 +38,7 @@ class BuildingType(Enum):
     WORKSHOP = "workshop"
     PALACE = "palace"
     TEMPLE = "temple"
+    WELL = "well"
 
 
 class EventType:
