@@ -269,6 +269,40 @@ class TestDeterminismEmergentDepth:
             assert "price_changes" in e.data, "Event should have batched price_changes"
             assert isinstance(e.data["price_changes"], dict), "price_changes should be a dict"
 
+    def test_building_production_emits_events(self):
+        """Buildings should produce resources and emit events."""
+        core = make_core(seed=42)
+        # Run a few ticks to trigger building production
+        events = core.tick_step()
+        production_events = [e for e in events if e.type == "building_production"]
+        # Should have production events for farms, lumber camps, etc.
+        assert len(production_events) > 0, "Should have building_production events"
+        
+    def test_buildings_have_production_consumption(self):
+        """Buildings from world generation should have resourcesProduced and resourcesConsumed."""
+        core = make_core(seed=42)
+        buildings = core.world.get("buildings", [])
+        assert len(buildings) > 0, "Should have buildings"
+        for b in buildings:
+            assert hasattr(b, "resourcesProduced"), "Building should have resourcesProduced"
+            assert hasattr(b, "resourcesConsumed"), "Building should have resourcesConsumed"
+            # At least some buildings should produce something
+            if b.type.value in ["farm", "lumber_camp", "mine", "workshop", "quarry"]:
+                assert len(b.resourcesProduced) > 0, f"{b.type} should produce resources"
+        
+    def test_building_production_replay(self):
+        """Building production should be replayable."""
+        core = make_core(seed=42)
+        core.tick_step()
+        events = core.event_log.events
+        prod_events = [e for e in events if e.type == "building_production"]
+        
+        # Replay
+        replayed = core.replay_tick(core.tick)
+        replayed_buildings = replayed["world"].get("buildings", [])
+        original_buildings = core.world.get("buildings", [])
+        assert len(replayed_buildings) == len(original_buildings), "Buildings should replay"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

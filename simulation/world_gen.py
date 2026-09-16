@@ -195,16 +195,34 @@ def generate_regions(
     return regions
 
 
+BUILDING_PRODUCTION = {
+    BuildingType.FARM: (ResourceType.FOOD, ResourceType.WATER),
+    BuildingType.LUMBER_CAMP: (ResourceType.WOOD, ResourceType.FOOD),
+    BuildingType.MINE: (ResourceType.IRON, ResourceType.FOOD),
+    BuildingType.WORKSHOP: (ResourceType.WOOD, ResourceType.IRON),
+    BuildingType.QUARRY: (ResourceType.STONE, ResourceType.FOOD),
+    BuildingType.MARKET: (None, None),
+    BuildingType.BARRACKS: (None, ResourceType.FOOD),
+    BuildingType.TEMPLE: (None, ResourceType.WOOD),
+    BuildingType.PALACE: (None, None),
+}
+
+def _get_building_production(btype: BuildingType):
+    produced, consumed = BUILDING_PRODUCTION.get(btype, (None, None))
+    resources_produced = [produced] if produced else []
+    resources_consumed = [consumed] if consumed else []
+    return resources_produced, resources_consumed
+
 def generate_cities(
     regions: list[Region], 
     numCities: int = 3
-) -> list[City]:
-    """Generate cities from regions."""
+) -> tuple[list[City], list[Building]]:
+    """Generate cities from regions. Returns (cities, all_buildings)."""
     cities: list[City] = []
+    all_buildings: list[Building] = []
     city_regions = random.sample(regions, min(numCities, len(regions)))
     
     for region in city_regions:
-        # Determine building types based on terrain
         building_types: list[BuildingType] = []
         if region.terrain == TerrainType.FOREST:
             building_types = [BuildingType.LUMBER_CAMP, BuildingType.MARKET]
@@ -217,35 +235,35 @@ def generate_cities(
         elif region.terrain == TerrainType.RIVER:
             building_types = [BuildingType.FARM]
         
-        # Add a market always
         if BuildingType.MARKET not in building_types:
             building_types.insert(0, BuildingType.MARKET)
         
-        buildings: list[Building] = []
         for i, btype in enumerate(building_types):
             pos_x = (i * 10) % max(region.position.x, 1)
-            buildings.append(Building(
+            resources_produced, resources_consumed = _get_building_production(btype)
+            bld = Building(
                 id=_next_building_id(),
                 type=btype,
                 regionId=region.id,
                 position=Position(x=pos_x, y=i),
                 level=1,
-                resourcesProduced=[],
-                resourcesConsumed=[],
-                capacity=0
-            ))
-
+                resourcesProduced=resources_produced,
+                resourcesConsumed=resources_consumed,
+                capacity=50
+            )
+            all_buildings.append(bld)
+        
         cities.append(City(
             id=_next_city_id(),
             name=f"City-{region.id}",
             regionId=region.id,
             population=random.randint(100, 500),
-            buildings=[b.id for b in buildings],
+            buildings=[b.id for b in all_buildings if b.regionId == region.id],
             resources=[],
             position=Position(x=region.position.x * 10 or 10, y=region.position.y * 10 or 10)
         ))
 
-    return cities
+    return cities, all_buildings
 
 
 def generate_world(config: WorldConfig) -> dict:
@@ -260,7 +278,7 @@ def generate_world(config: WorldConfig) -> dict:
         config.width, config.height, config.seed
     )
 
-    cities = generate_cities(regions, numCities=3)
+    cities, all_buildings = generate_cities(regions, numCities=3)
 
     # Create markets for each region
     markets: list[Market] = []
@@ -315,6 +333,7 @@ def generate_world(config: WorldConfig) -> dict:
         "regions": regions,
         "resources": resources,
         "cities": cities,
+        "buildings": all_buildings,
         "markets": markets,
         "agents": agents,
         "agent": agents[0] if agents else None,

@@ -112,7 +112,7 @@ class SimulationCore:
         return events
     
     def _process_resources(self) -> list[Event]:
-        """Process resource production/consumption."""
+        """Process resource production/consumption including buildings."""
         events = []
         if self.world is None:
             return events
@@ -134,6 +134,31 @@ class SimulationCore:
                     "amount": resource.amount,
                     "max": resource.maxAmount
                 }))
+        
+        # Building production
+        buildings = self.world.get("buildings", [])
+        for building in buildings:
+            for produced_type in building.resourcesProduced:
+                res = next((r for r in self.world["resources"]
+                           if r.type == produced_type and r.regionId == building.regionId), None)
+                if res and res.amount < res.maxAmount:
+                    res.amount = min(res.maxAmount, res.amount + 1)
+                    events.append(self.resource_event("building_production", building.id, {
+                        "building_type": building.type.value,
+                        "resource": produced_type.value,
+                        "amount": res.amount,
+                        "building_id": building.id
+                    }))
+            for consumed_type in building.resourcesConsumed:
+                for res in self.world["resources"]:
+                    if res.type == consumed_type and res.regionId == building.regionId and res.amount > 0:
+                        res.amount -= 1
+                        events.append(self.resource_event("building_consumption", building.id, {
+                            "building_type": building.type.value,
+                            "resource": consumed_type.value,
+                            "amount": res.amount
+                        }))
+                        break
         
         return events
     
@@ -398,6 +423,8 @@ class SimulationCore:
             self._handle_flood(world, event, data)
         elif event_type == "famine":
             self._handle_famine(world, event, data)
+        elif event_type == "building_production":
+            self._handle_building_production(world, event, data)
 
     def _handle_resource_growth(self, world: dict, event: Event, data: dict):
         """Handle resource growth event."""
@@ -658,6 +685,15 @@ class SimulationCore:
             for agent in world["agents"]:
                 agent.needs.hunger = min(1.0, agent.needs.hunger + 0.3)
                 agent.health = max(0, agent.health - 0.1)
+
+    def _handle_building_production(self, world: dict, event: Event, data: dict):
+        """Handle building production event — update resources."""
+        resource_type = data.get("resource")
+        amount = data.get("amount", 0)
+        for res in world["resources"]:
+            if res.type.value == resource_type and res.regionId == event.target:
+                res.amount = max(0, amount)
+                break
 
     # Event helper methods
 
