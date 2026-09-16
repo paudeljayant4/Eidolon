@@ -326,3 +326,11 @@ The simulation had basic agent actions but was missing several gameplay features
 
 ### Category Rotation
 All core cycles complete. Simulation is now feature-complete with hunger/eat fix, emergent social system, performance optimizations, full action set, and complete event handler coverage.
+
+### Cycle 5 Follow-up: _handle_social_interaction fragility
+Fixed `_handle_social_interaction` to use `world.get("agents")` with `None` guard instead of `"agents" in world` check. Added 2 regression tests: `test_socialize_no_agents_world_does_not_crash` and `test_socialize_missing_agents_key_does_not_crash`.
+
+### Files Changed (follow-up)
+- simulation/core.py: _handle_social_interaction None guard
+- test_emergent_depth.py: 2 regression tests
+- PROGRESS.md: this entry
