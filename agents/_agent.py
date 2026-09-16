@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Any
 import random
 import json
 import time
-from simulation._types import Needs, Personality, Position, Skills, Inventory, Relationships  # Import types from simulation
+from simulation._types import Needs, Personality, Position, Skills, Inventory, Relationships, ResourceType  # Import types from simulation
 
 
 class AgentType(Enum):
@@ -163,8 +163,14 @@ class RuleBasedPlanner(BasePlanner):
         priority = 0.5
         confidence = 0.7
 
-        # Priority 1: Satisfy urgent needs
-        if needs.get("hunger", 1.0) < 0.3:
+        # Priority 1: Eat if we have food and are hungry (takes precedence over seeking)
+        if needs.get("inventory_food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
+            action = "eat"
+            priority = 0.7
+            confidence = 0.8
+
+        # Priority 2: Satisfy urgent needs (only if we have no food to eat)
+        elif needs.get("hunger", 1.0) < 0.3:
             action = "seek_food"
             confidence = 0.9
             priority = 1.0
@@ -177,7 +183,13 @@ class RuleBasedPlanner(BasePlanner):
             confidence = 0.8
             priority = 0.8
 
-        # Priority 2: Economic actions
+        # Priority 2: Eat if we have food and are moderately hungry
+        elif needs.get("inventory_food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
+            action = "eat"
+            priority = 0.7
+            confidence = 0.8
+
+        # Priority 3: Economic actions
         elif perception.visible_resources.get("wood", 0) > 50:
             action = "gather_wood"
             priority = 0.6
@@ -191,18 +203,13 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.5
             confidence = 0.6
 
-        # Priority 3: Social actions
+        # Priority 4: Social actions
         elif perception.nearby_agents:
             action = "socialize"
             target = perception.nearby_agents[0]
             priority = 0.4
             confidence = 0.5
 
-        # Priority 4: Eat if we have food and are hungry
-        if self.inventory.resources.get("food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
-            action = "eat"
-            priority = 0.7
-            confidence = 0.8
         # Priority 5: Explore
         else:
             action = "explore"
@@ -335,10 +342,33 @@ class Agent:
             })
 
         elif action == "seek_food":
-            events.append({
-                "type": "hunger_motivation",
-                "data": {"action": "seek_food", "hunger": self.needs.hunger}
-            })
+            food_acquired = False
+            for res in core.world.get("resources", []):
+                if res.type == ResourceType.FOOD and res.amount > 0:
+                    self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 15
+                    res.amount -= 1
+                    events.append({
+                        "type": "resource_gathered",
+                        "data": {"resource": "food", "amount": 15}
+                    })
+                    food_acquired = True
+                    break
+            if not food_acquired:
+                for market in core.world.get("markets", []):
+                    if market.supplies.get(ResourceType.FOOD, 0) > 0:
+                        self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 10
+                        market.supplies[ResourceType.FOOD] -= 1
+                        events.append({
+                            "type": "resource_gathered",
+                            "data": {"resource": "food", "amount": 10, "source": "market"}
+                        })
+                        food_acquired = True
+                        break
+            if not food_acquired:
+                events.append({
+                    "type": "hunger_motivation",
+                    "data": {"action": "seek_food", "hunger": self.needs.hunger, "reason": "no food available"}
+                })
 
         elif action == "seek_water":
             events.append({
@@ -402,10 +432,33 @@ class Agent:
                     "data": {"food_consumed": 1, "hunger_after": self.needs.hunger}
                 })
             else:
-                events.append({
-                    "type": "hunger_motivation",
-                    "data": {"action": "eat", "reason": "no food in inventory"}
-                })
+                food_acquired = False
+                for res in core.world.get("resources", []):
+                    if res.type == ResourceType.FOOD and res.amount > 0:
+                        self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 15
+                        res.amount -= 1
+                        events.append({
+                            "type": "resource_gathered",
+                            "data": {"resource": "food", "amount": 15, "reason": "eat_redirect"}
+                        })
+                        food_acquired = True
+                        break
+                if not food_acquired:
+                    for market in core.world.get("markets", []):
+                        if market.supplies.get(ResourceType.FOOD, 0) > 0:
+                            self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 10
+                            market.supplies[ResourceType.FOOD] -= 1
+                            events.append({
+                                "type": "resource_gathered",
+                                "data": {"resource": "food", "amount": 10, "source": "market", "reason": "eat_redirect"}
+                            })
+                            food_acquired = True
+                            break
+                if not food_acquired:
+                    events.append({
+                        "type": "hunger_motivation",
+                        "data": {"action": "eat", "reason": "no food available anywhere"}
+                    })
 
         return events
 

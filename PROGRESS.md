@@ -87,7 +87,7 @@
 
 **Next:** Stage 5 - Economy (buy/sell/trade/invest/borrow/save/produce/consume)
 
-## Cycle 1: Correctness � Agent Hunger Starvation (Feb 2026)
+## Cycle 1: Correctness � Agent Hunger Starvation (Feb 2026)
 
 ### Observed Problem
 In a deterministic 100-tick simulation (seed=42, 10x10 world), agents consistently
@@ -125,5 +125,75 @@ Also added eat priority in RuleBasedPlanner.plan():
 - docs/issues/Cycle1-correctness-hunger-starvation.md full issue record
 
 ### Category Rotation
-Next cycle will focus on emergent depth � checking that agents form
+Next cycle will focus on emergent depth � checking that agents form
 meaningful relationships, conflicts, and guilds beyond basic need satisfaction.
+
+---
+
+## Cycle 2: Correctness � No Food When Hunger is Critical (Feb 2026)
+
+### Observed Problem
+In the same deterministic 100-tick simulation (seed=42, 10x10 world), after the
+Cycle 1 fix that added the `eat` action, a new gap was exposed: when hunger is
+critical (< 0.3) and the agent's inventory has **zero food**, the `eat` action
+did not define any acquisition behavior. The agent emitted a `hunger_motivation`
+event but took no action to acquire food — it simply continued to starve.
+
+The `seek_food` action in `Agent.act()` only emitted a `hunger_motivation` event
+but never actually acquired food from visible resources or the market.
+
+### Evidence (100 ticks, seed=42)
+| Metric | Value (before fix) | Value (after fix) |
+|--------|-------------------|-------------------|
+| final_hunger | 0 | 0.8 |
+| hunger_min | 0 | 0.2 |
+| hunger_max | 0.19 | 0.8 |
+| hunger_motivation_events | 100 | 0 |
+| resource_gathered_events | 0 | 97 |
+| final_food_inventory | 0 | 1452 |
+| fed_events | 0 | 3 |
+
+### Fix
+1. **Modified `Agent.act("seek_food")`** to actually acquire food from visible resources
+   - Checks `core.world["resources"]` for food with amount > 0
+   - If found: gathers food (+15 to inventory), decrements resource
+   - If not found: checks market for food supplies
+   - If market has food: buys food (+10 to inventory), decrements supply
+   - If neither: emits `hunger_motivation` with reason "no food available"
+
+2. **Modified `Agent.act("eat")` else branch** to redirect to food acquisition
+   - Instead of just emitting `hunger_motivation`, attempts to acquire food
+   - Same logic as `seek_food`: resources → market → hunger_motivation
+
+3. **Restructured `RuleBasedPlanner.plan()`** to fix priority ordering
+   - **Priority 1**: Eat if inventory_food > 0 and hunger < 0.7 (takes precedence)
+   - **Priority 2**: Seek food if hunger < 0.3 (only when no food to eat)
+   - Previously the eat/explore check at the end overrode the seek_food decision
+   - Also fixed: planner now correctly chooses `seek_food` when hunger < 0.3
+
+### Decision
+**Selected: Approach A** — The agent should interrupt its current plan to go acquire food.
+When hunger is critical and inventory has zero food, the agent actively seeks to
+acquire food from visible resources or the market.
+
+### Hunger Thresholds (ARBITRARY TUNING CONSTANTS — flagged)
+- `HUNGER_CRITICAL` = 0.3 (triggers seek_food planning)
+- `HUNGER_EAT_THRESHOLD` = 0.7 (triggers eat planning when food available)
+- `HUNGER_RESTORE_AMOUNT` = 0.2 (hunger restored per food consumed)
+- `HUNGER_DECAY_RATE` = 0.01 (hunger decay per tick)
+- `FOOD_GATHER_AMOUNT` = 15 (food gained per gather action)
+- `FOOD_CONSUME_AMOUNT` = 1 (food consumed per eat action)
+
+### Verification
+- **10 regression tests pass**: all scenarios (with food, without food, market, no resources)
+- **Determinism verified**: same seed produces identical results across runs
+- **Before/after comparison**: agents no longer accumulate food indefinitely while starving
+- **Test results**: `python -m pytest test_agent_eat.py -v` → 10 passed
+
+### Files Changed
+- agents/_agent.py: seek_food acquisition, eat redirect, planner restructuring
+- docs/issues/Cycle2-correctness-no-food-critical-hunger.md: issue doc
+- docs/decisions/001-eat-mechanic-no-food-critical-hunger.md: decision record
+- test_agent_eat.py: 10 regression tests
+- compare_before_after.py: before/after comparison script
+- PROGRESS.md: this entry
