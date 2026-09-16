@@ -312,11 +312,17 @@ The simulation had basic agent actions but was missing several gameplay features
 - Determinism verified: same seed produces reproducible results
 - No duplicate code remains in `agents/_agent.py`
 - `build` added to LLM planner valid actions and prompt
+- **Core engine improvements**: Added 12 missing event handlers (BIRTH, DEATH, CONFLICT, BUILD, RESEARCH, RESOURCE_DEPLETION, ELECTION, TREATY, WAR, MINE_COLLAPSE, FLOOD, FAMINE) in `SimulationCore._apply_event()`
+- Added health/energy/safety decay to `_decay_needs()` and `_process_agents()`
+- Added health/energy costs to `agent_action()` for move/trade/rest/build/explore
+- Fixed `_handle_moved` for multi-agent world support
+- Created `.gitignore` to prevent `__pycache__` commits
 
 ### Files Changed
 - agents/_agent.py: trade/build/rest/explore/eat/seek_food/socialize enhancements
+- simulation/core.py: 12 missing event handlers, health/energy/safety mechanics, .gitignore
 - docs/issues/Cycle5-feature-depth.md: issue doc
 - PROGRESS.md: this entry
 
 ### Category Rotation
-All core cycles complete. Simulation is now feature-complete with hunger/eat fix, emergent social system, performance optimizations, and full action set.
+All core cycles complete. Simulation is now feature-complete with hunger/eat fix, emergent social system, performance optimizations, full action set, and complete event handler coverage.
