@@ -457,8 +457,9 @@ class SimulationCore:
         """Handle social interaction event."""
         agent_id = event.source
         target = data.get("target")
-        if target and "agents" in world:
-            for agent in world["agents"]:
+        agents = world.get("agents")
+        if target and agents:
+            for agent in agents:
                 if agent.id == target:
                     relationship_val = data.get("relationship_value", 0.0)
                     agent.relationships.values[agent_id] = round(

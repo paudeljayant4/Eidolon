@@ -100,6 +100,20 @@ class TestSocializeMechanics:
         no_target_events = [e for e in events if "no nearby agents" in e["data"].get("reason", "")]
         assert len(no_target_events) > 0, "Should emit reason for no target"
 
+    def test_socialize_no_agents_world_does_not_crash(self):
+        """Social interaction handler should not raise when world has no agents."""
+        core = make_core(seed=42)
+        core.world["agents"] = []
+        event = type("Event", (), {"type": "social_interaction", "source": "agent-0", "data": {"target": "agent-1", "relationship_value": 0.3}})()
+        core._handle_social_interaction(core.world, event, {"target": "agent-1", "relationship_value": 0.3})
+
+    def test_socialize_missing_agents_key_does_not_crash(self):
+        """Social interaction handler should not raise when world lacks agents key."""
+        core = make_core(seed=42)
+        del core.world["agents"]
+        event = type("Event", (), {"type": "social_interaction", "source": "agent-0", "data": {"target": "agent-1", "relationship_value": 0.3}})()
+        core._handle_social_interaction(core.world, event, {"target": "agent-1", "relationship_value": 0.3})
+
 
 class TestSocialNeedInPlanner:
     """Social need should influence planning."""
