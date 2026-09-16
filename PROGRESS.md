@@ -287,6 +287,36 @@ critical as the world scales beyond 10×10 to 100×100+.
 - docs/issues/Cycle4-performance-bottlenecks.md: issue doc
 - PROGRESS.md: this entry
 
+## Cycle 5: Feature Depth — Trade/Build/Rest/Explore (Feb 2026)
+
+### Observed Problem
+The simulation had basic agent actions but was missing several gameplay features:
+- No `trade` action (agents couldn't buy/sell food at markets)
+- No `build` action (agents couldn't construct buildings)
+- `rest` action was minimal (only restored rest need)
+- `explore` action lacked energy/safety mechanics
+- `eat` action lacked health/energy restoration
+- `seek_food` lacked energy cost
+
+### Fix
+1. **`trade` action**: Buy/sell food at markets; updates hunger and health
+2. **`build` action**: Construct farms; costs energy
+3. **`rest` action**: Enhanced to restore energy and health
+4. **`explore` action**: Added energy and safety costs
+5. **`eat` action**: Enhanced with health (+0.1) and energy (+0.05) restoration
+6. **`seek_food` action**: Added energy cost (-0.1)
+7. **`socialize` action**: Already functional, kept as-is
+
+### Verification
+- **All 23 tests pass** (10 eat + 13 emergent depth)
+- Determinism verified: same seed produces reproducible results
+- No duplicate code remains in `agents/_agent.py`
+- `build` added to LLM planner valid actions and prompt
+
+### Files Changed
+- agents/_agent.py: trade/build/rest/explore/eat/seek_food/socialize enhancements
+- docs/issues/Cycle5-feature-depth.md: issue doc
+- PROGRESS.md: this entry
+
 ### Category Rotation
-Next cycle will focus on feature depth — identifying and implementing
-missing features in the simulation.
+All core cycles complete. Simulation is now feature-complete with hunger/eat fix, emergent social system, performance optimizations, and full action set.
