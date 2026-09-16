@@ -1,0 +1,19 @@
+{
+  "name": "eidolon-shared",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shared types and schemas across Eidolon packages",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.2",
+    "@types/node": "^20.14.9",
+    "vitest": "^2.0.5"
+  }
+}

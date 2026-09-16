@@ -1,0 +1,20 @@
+{
+  "name": "eidolon-simulation",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The deterministic core simulation engine for Eidolon",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.2",
+    "@types/uuid": "^9.0.0",
+    "vitest": "^2.0.5"
+  }
+}

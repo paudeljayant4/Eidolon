@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pg
+redis
+pydantic
+pydantic-settings
+pytest
+ruff
+mypy

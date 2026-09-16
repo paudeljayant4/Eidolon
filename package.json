@@ -1,0 +1,16 @@
+{
+  "name": "eidolon",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "simulation",
+    "agents",
+    "shared"
+  ],
+  "scripts": {
+    "lint": "echo 'No lint config yet'",
+    "typecheck": "echo 'No typecheck config yet'",
+    "test": "echo 'No test config yet'"
+  }
+}
