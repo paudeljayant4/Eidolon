@@ -653,3 +653,29 @@ Tested simulation with 20 agents on 20x20 world for 200 ticks to verify scaling 
 
 ### Category Rotation
 Scale validated at 20 agents. Next cycle should address: Correctness (resource depletion tracking, long-term stability), Performance (optimize agent perception for 50+ agents), or Feature depth (conflict system between orgs).
+
+## Cycle 13: Correctness — Resource Depletion Check (Sep 2026)
+
+### Observed
+Checked resource depletion over 500 ticks to verify long-term stability.
+
+### Evidence
+| Resource | Tick 0 | Tick 500 | Depleted nodes |
+|----------|--------|----------|----------------|
+| Food | 9,731 | 14,958 | 0 |
+| Water | 3,389 | 9,500 | 5 (constant from tick 100) |
+
+### Analysis
+- Food increases 54% over 500 ticks (farms producing, agents gathering but not depleting)
+- Water increases 180% (wells producing water)
+- 5 water nodes depleted (regions with wells consuming faster than regeneration)
+- System self-corrects via regeneration (every 5 ticks)
+- No critical resource depletion — world is economically stable
+
+### Verification
+- All 43 tests pass
+- Determinism preserved
+- No agent deaths from resource starvation
+
+### Files Changed
+- PROGRESS.md: this entry
