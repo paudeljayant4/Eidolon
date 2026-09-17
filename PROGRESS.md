@@ -612,3 +612,44 @@ Only 1 organization existed (Main Guild with agent-0). No agents joined or forme
 
 ### Category Rotation
 Feature depth delivered (org growth). Next cycle should address: Correctness (resource depletion, edge cases), Performance (scale testing), or Scale (test with 50+ agents).
+
+## Cycle 12: Scale — 20-Agent Stress Test (Sep 2026)
+
+### Observed
+Tested simulation with 20 agents on 20x20 world for 200 ticks to verify scaling behavior with the new emergent depth features.
+
+### Evidence
+| Metric | Value |
+|--------|-------|
+| Agents | 20 |
+| World | 20x20 (800 resources) |
+| Ticks | 200 |
+| Time | 14.38s (71.9ms/tick) |
+| Events | 48,263 |
+| Agents alive | 20/20 |
+| Organizations | 1 (20 members) |
+| Buildings | 49 (9 original + 40 agent-built) |
+| Trade events | 3,201 |
+| Fed events | 180 |
+| Drink events | 160 |
+| Build events | 40 |
+| Join org events | 19 |
+
+### Analysis
+- 71.9ms/tick at 20 agents is acceptable for gameplay
+- All agents survive 200 ticks
+- All systems active: trade, eat, drink, build, socialize, org join
+- Org growth works: 19 agents joined Main Guild
+- Build cap effective: exactly 40 builds (20 agents × 2 max)
+- Performance bottleneck remains in agent perception loop (70-78% of tick time)
+
+### Verification
+- All 43 tests pass
+- Determinism preserved
+- No agent deaths at scale
+
+### Files Changed
+- PROGRESS.md: this entry
+
+### Category Rotation
+Scale validated at 20 agents. Next cycle should address: Correctness (resource depletion tracking, long-term stability), Performance (optimize agent perception for 50+ agents), or Feature depth (conflict system between orgs).
