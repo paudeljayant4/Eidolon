@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Eidolon Observer</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.5; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+  header { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 1rem; }
+  header h1 { font-size: 1.5rem; font-weight: 600; }
+  header .badge { background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.75rem; font-size: 0.8rem; color: var(--dim); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .stat .value { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+  .stat .label { font-size: 0.75rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+  .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+  @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .card-header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.9rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--dim); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: rgba(88,166,255,0.05); }
+  .bar-cell { width: 120px; }
+  .bar-bg { background: var(--border); border-radius: 3px; height: 6px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.yellow { background: var(--yellow); }
+  .bar-fill.red { background: var(--red); }
+  .bar-fill.blue { background: var(--accent); }
+  .event-list { max-height: 400px; overflow-y: auto; padding: 0.5rem 0; }
+  .event-item { padding: 0.35rem 1rem; font-size: 0.8rem; display: flex; gap: 0.5rem; align-items: baseline; }
+  .event-item:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  .event-tick { color: var(--dim); font-family: monospace; min-width: 45px; }
+  .event-type { font-weight: 500; }
+  .event-type.traded { color: var(--accent); }
+  .event-type.fed { color: var(--green); }
+  .event-type.drank { color: #79c0ff; }
+  .event-type.build { color: var(--yellow); }
+  .event-type.social_interaction { color: #d2a8ff; }
+  .event-type.rested { color: #7ee787; }
+  .event-type.joined_organization { color: #f0883e; }
+  .event-type.resource_gathered { color: var(--dim); }
+  .event-detail { color: var(--dim); }
+  .org-badge { display: inline-block; background: rgba(88,166,255,0.15); border: 1px solid rgba(88,166,255,0.3); border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.7rem; color: var(--accent); }
+  .loading { text-align: center; padding: 4rem; color: var(--dim); }
+  .loading .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 0.5rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { text-align: center; padding: 4rem; color: var(--red); }
+</style>
+</head>
+<body>
+<div class="container" id="app">
+  <div class="loading"><div class="spinner"></div><br/>Loading simulation data...</div>
+</div>
+
+<script>
+const SNAPSHOT_URL = 'simulation-snapshot.json';
+
+function barColor(v) { return v > 0.7 ? 'green' : v > 0.4 ? 'yellow' : 'red'; }
+function bar(v) { return `<div class="bar-bg"><div class="bar-fill ${barColor(v)}" style="width:${(v*100).toFixed(0)}%"></div></div>`; }
+function fmt(v) { return typeof v === 'number' ? v.toFixed(3) : v; }
+
+function render(data) {
+  const { tick = 0, agents = [], events = [], buildings = [], organizations = [] } = data;
+  const eventCounts = {};
+  events.forEach(e => { eventCounts[e.type] = (eventCounts[e.type] || 0) + 1; });
+
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <header>
+      <h1>Eidolon Observer</h1>
+      <span class="badge">Tick ${tick}</span>
+      <span class="badge">${agents.length} agents</span>
+      <span class="badge">${buildings.length} buildings</span>
+      <span class="badge">${organizations.length} orgs</span>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="value">${eventCounts.traded || 0}</div><div class="label">Trades</div></div>
+      <div class="stat"><div class="value">${eventCounts.fed || 0}</div><div class="label">Fed</div></div>
+      <div class="stat"><div class="value">${eventCounts.drank || 0}</div><div class="label">Drank</div></div>
+      <div class="stat"><div class="value">${eventCounts.build || 0}</div><div class="label">Built</div></div>
+      <div class="stat"><div class="value">${eventCounts.social_interaction || 0}</div><div class="label">Social</div></div>
+      <div class="stat"><div class="value">${eventCounts.rested || 0}</div><div class="label">Rested</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">Agent States</div>
+        <table>
+          <thead><tr><th>ID</th><th>Org</th><th class="bar-cell">Hunger</th><th class="bar-cell">Thirst</th><th class="bar-cell">Energy</th><th class="bar-cell">Health</th><th class="bar-cell">Social</th><th>Food</th><th>Water</th><th>Wood</th></tr></thead>
+          <tbody>
+            ${agents.map(a => `<tr>
+              <td>${a.id}</td>
+              <td>${a.org ? '<span class="org-badge">' + a.org.substring(0,12) + '</span>' : '<span style="color:var(--dim)">—</span>'}</td>
+              <td class="bar-cell">${bar(a.hunger)} <span style="font-size:0.7rem;color:var(--dim)">${fmt(a.hunger)}</span></td>
+              <td class="bar-cell">${bar(a.thirst)} <span style="font-size:0.7rem;color:var(--dim)">${fmt(a.thirst)}</span></td>
+              <td class="bar-cell">${bar(a.energy)} <span style="font-size:0.7rem;color:var(--dim)">${fmt(a.energy)}</span></td>
+              <td class="bar-cell">${bar(a.health)} <span style="font-size:0.7rem;color:var(--dim)">${fmt(a.health)}</span></td>
+              <td class="bar-cell">${bar(a.social)} <span style="font-size:0.7rem;color:var(--dim)">${fmt(a.social)}</span></td>
+              <td style="text-align:center">${a.food || 0}</td>
+              <td style="text-align:center">${a.water || 0}</td>
+              <td style="text-align:center">${a.wood || 0}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Event Breakdown</div>
+        <table>
+          <thead><tr><th>Type</th><th>Count</th><th>%</th></tr></thead>
+          <tbody>
+            ${Object.entries(eventCounts).sort((a,b) => b[1]-a[1]).map(([type, count]) => `<tr>
+              <td><span class="event-type ${type}">${type}</span></td>
+              <td>${count}</td>
+              <td style="color:var(--dim)">${(count/events.length*100).toFixed(1)}%</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:2rem">
+      <div class="card-header">Buildings (${buildings.length})</div>
+      <table>
+        <thead><tr><th>ID</th><th>Type</th><th>Region</th><th>Level</th></tr></thead>
+        <tbody>
+          ${buildings.map(b => `<tr>
+            <td style="font-family:monospace;font-size:0.8rem">${b.id}</td>
+            <td>${b.type}</td>
+            <td style="color:var(--dim)">${b.region}</td>
+            <td>${b.level}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    ${organizations.length ? `<div class="card" style="margin-bottom:2rem">
+      <div class="card-header">Organizations (${organizations.length})</div>
+      <table>
+        <thead><tr><th>Name</th><th>Leader</th><th>Members</th></tr></thead>
+        <tbody>
+          ${organizations.map(o => `<tr>
+            <td><strong>${o.name}</strong></td>
+            <td>${o.leader}</td>
+            <td>${o.members.join(', ')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header">Recent Events (last 50)</div>
+      <div class="event-list">
+        ${events.slice(-50).reverse().map(e => {
+          let detail = '';
+          if (e.data) {
+            if (e.data.action) detail = e.data.action;
+            else if (e.data.resource) detail = e.data.resource;
+            else if (e.data.building_type) detail = e.data.building_type;
+          }
+          return `<div class="event-item">
+            <span class="event-tick">t${e.tick}</span>
+            <span class="event-type ${e.type}">${e.type}</span>
+            <span class="event-detail">${detail}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+fetch(SNAPSHOT_URL)
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(data => {
+    // Normalize snapshot format to what the observer expects
+    const agents = (data.agents || []).map(a => ({
+      id: a.id,
+      hunger: a.hunger ?? a.needs?.hunger ?? 0,
+      thirst: a.thirst ?? a.needs?.thirst ?? 0,
+      energy: a.energy ?? 0,
+      health: a.health ?? 0,
+      social: a.social ?? a.needs?.social ?? 0,
+      food: a.food_inv ?? a.inventory?.resources?.food ?? 0,
+      water: a.water_inv ?? a.inventory?.resources?.water ?? 0,
+      wood: a.wood_inv ?? a.inventory?.resources?.wood ?? 0,
+      org: a.org ?? a.organization ?? null,
+    }));
+    const events = (data.events || []).map(e => ({
+      tick: e.timestamp ?? e.tick ?? 0,
+      type: e.type,
+      data: e.data || {},
+    }));
+    const buildings = (data.buildings || []).map(b => ({
+      id: b.id,
+      type: b.type?.value ?? b.type ?? '?',
+      region: b.regionId ?? '?',
+      level: b.level ?? 1,
+    }));
+    const organizations = (data.organizations || []).map(o => ({
+      name: o.name,
+      leader: o.leader_id,
+      members: o.members || [],
+    }));
+    render({ tick: data.tick ?? 0, agents, events, buildings, organizations });
+  })
+  .catch(err => {
+    document.getElementById('app').innerHTML =
+      `<div class="error"><h2>Failed to load simulation data</h2><p>${err.message}</p><p style="margin-top:1rem;color:var(--dim)">Expected <code>simulation-snapshot.json</code> in the same directory.</p></div>`;
+  });
+</script>
+</body>
+</html>
