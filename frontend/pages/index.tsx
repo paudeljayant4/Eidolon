@@ -20,7 +20,7 @@ export default function Observer() {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    fetch('/simulation-snapshot.json')
+    fetch(new URL('simulation-snapshot.json', document.baseURI).href)
       .then(r => r.json())
       .then(data => {
         setEvents(data.events || []);
@@ -56,7 +56,7 @@ export default function Observer() {
       <h2>Recent Events</h2>
       <ul>
         {events.slice(-20).map((e, i) => (
-          <li key={i}>{e.type} ({e.data?.action || ''})</li>
+          <li key={i}>{e.type} ({String(e.data?.action || '')})</li>
         ))}
       </ul>
     </div>

@@ -60,7 +60,7 @@
 </div>
 
 <script>
-const SNAPSHOT_URL = 'simulation-snapshot.json';
+const SNAPSHOT_URL = new URL('simulation-snapshot.json', document.baseURI).href;
 
 function barColor(v) { return v > 0.7 ? 'green' : v > 0.4 ? 'yellow' : 'red'; }
 function bar(v) { return `<div class="bar-bg"><div class="bar-fill ${barColor(v)}" style="width:${(v*100).toFixed(0)}%"></div></div>`; }
