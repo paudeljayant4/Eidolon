@@ -349,20 +349,25 @@ class Agent:
 
     def perceive(self, world_state: dict) -> Perception:
         perception = Perception()
+        vis_radius = 20
+
         if "resources" in world_state:
             for res in world_state["resources"]:
-                rtype = res.type.value  # Use string value
-                if rtype not in perception.visible_resources:
-                    perception.visible_resources[rtype] = 0
-                perception.visible_resources[rtype] += res.amount
+                dx = res.position.x - self.position.x
+                dy = res.position.y - self.position.y
+                if abs(dx) <= vis_radius and abs(dy) <= vis_radius:
+                    rtype = res.type.value
+                    if rtype not in perception.visible_resources:
+                        perception.visible_resources[rtype] = 0
+                    perception.visible_resources[rtype] += res.amount
         if "markets" in world_state:
             for market in world_state["markets"]:
                 for rtype, price in market.prices.items():
-                    perception.market_prices[rtype.value] = price  # Use string value
+                    perception.market_prices[rtype.value] = price
         if "needs" in world_state:
             perception.needs_state = world_state["needs"]
         
-        # Detect nearby agents within radius 15 (increased for larger worlds)
+        # Detect nearby agents within radius 15
         perception.nearby_agents = []
         if "agents" in world_state:
             for other in world_state["agents"]:

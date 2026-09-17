@@ -541,3 +541,39 @@ After Cycle 8 connected agents to the tick loop, 500-tick observation revealed:
 
 ### Category Rotation
 Emergent depth improved significantly. Next cycle should address: Correctness (verify no regressions in edge cases), Performance (scale testing with 50+ agents), or Feature depth (organization growth, conflict system).
+
+## Cycle 10: Performance — Agent Perception Visibility Radius (Sep 2026)
+
+### Observed
+Agent perception loop was 70-78% of tick time. At 50x50 (5000 resources, 2500 markets), perceive() iterated ALL resources and markets for each agent (37,500 iterations per tick), causing 924ms/tick. Correctness also suffered: agents could see resources on the other side of the map.
+
+### Evidence
+- 10x10 baseline: 4.9ms/tick (acceptable)
+- 20x20 medium: 19.0ms/tick (acceptable)
+- 50x50 large: 923.8ms/tick (unacceptable)
+- Bottleneck: agent perception 70-78% of tick time
+
+### Fix
+Added visibility radius (20) to `Agent.perceive()`. Agents now only see resources within Manhattan distance 20. Markets still use global prices (already throttled by MARKET_UPDATE_INTERVAL).
+
+### Correctness Check (also Cycle 10)
+- 1000-tick simulation: 5/5 agents alive, energy stable at 0.995
+- Determinism across seeds: all pass
+- Zero resources edge case: agents survive
+- Replay: matches agent count
+- Save/load: works correctly
+- 40 regression tests: all pass
+
+### Verification
+- All 40 tests pass
+- Determinism preserved
+- All emergent metrics identical (trade=2000, fed=120, drank=115, build=10, socialize=25)
+- Performance improved for larger worlds (visibility radius limits iteration count)
+
+### Files Changed
+- agents/_agent.py: visibility radius in perceive()
+- docs/issues/Cycle10-performance-perception-radius.md: issue doc
+- PROGRESS.md: this entry
+
+### Category Rotation
+Performance improved with visibility radius. Next cycle should address: Correctness (resource depletion tracking), Feature depth (organization growth, conflict system), or Scale (test with 50+ agents).
