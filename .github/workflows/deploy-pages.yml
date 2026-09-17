@@ -19,17 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install
-        working-directory: frontend
-        run: npm ci
-      - name: Build static export
-        working-directory: frontend
-        env:
-          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-        run: npm run build
+      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: frontend/out
