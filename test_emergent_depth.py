@@ -449,5 +449,39 @@ class TestCycle9EmergentDepth:
             assert e1.type == e2.type, f"Event type mismatch: {e1.type} vs {e2.type}"
 
 
+class TestCycle11OrgGrowth:
+    """Tests for Cycle 11: organization growth and membership."""
+
+    def test_500_tick_agents_join_org(self):
+        """Unaffiliated agents should join existing organizations."""
+        core = make_core(seed=42)
+        for _ in range(500):
+            core.tick_step()
+
+        agents = core.world.get("agents", [])
+        org_agents = [a for a in agents if a.organization is not None]
+        assert len(org_agents) >= 3, f"At least 3 agents should have org, got {len(org_agents)}"
+
+    def test_500_tick_org_members_list(self):
+        """Organization members list should reflect all members."""
+        core = make_core(seed=42)
+        for _ in range(500):
+            core.tick_step()
+
+        orgs = core.world.get("organizations", [])
+        assert len(orgs) >= 1, "Should have at least 1 org"
+        for org in orgs:
+            assert len(org.members) >= 2, f"Org {org.id} should have >= 2 members, got {len(org.members)}"
+
+    def test_500_tick_joined_organization_events(self):
+        """joined_organization events should be emitted."""
+        core = make_core(seed=42)
+        for _ in range(500):
+            core.tick_step()
+
+        join_events = [e for e in core.event_log.events if e.type == "joined_organization"]
+        assert len(join_events) >= 2, f"Should have >= 2 join events, got {len(join_events)}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

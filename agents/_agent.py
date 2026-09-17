@@ -200,34 +200,54 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.6
             confidence = 0.6
 
-        # Priority 7: Gather wood if need it for building
+        # Priority 7: Organization — join if nearby agent has one and we don't
+        elif (not needs.get("organization")) and perception.nearby_agents:
+            nearby_org = None
+            for near_id in perception.nearby_agents:
+                org = needs.get(f"org_of_{near_id}")
+                if org:
+                    nearby_org = org
+                    break
+            if nearby_org:
+                action = "join_organization"
+                target = nearby_org
+                priority = 0.4
+                confidence = 0.5
+
+        # Priority 8: Organization — form if no org and have enough food
+        elif (not needs.get("organization")) and needs.get("inventory_food", 0) > 50:
+            action = "form_organization"
+            priority = 0.3
+            confidence = 0.4
+
+        # Priority 9: Gather wood if need it for building
         elif needs.get("inventory_wood", 0) < 20 and needs.get("energy", 1.0) > 0.3:
             action = "gather_wood"
             priority = 0.6
             confidence = 0.7
 
-        # Priority 8: Trade - buy food when hungry and market has food
+        # Priority 10: Trade - buy food when hungry and market has food
         elif needs.get("hunger", 1.0) < 0.8 and needs.get("inventory_food", 0) == 0 and perception.market_prices.get("food", 0) > 0:
             action = "trade"
             target = self._find_market_target(perception)
             priority = 0.8
             confidence = 0.8
 
-        # Priority 9: Trade - sell surplus food
+        # Priority 11: Trade - sell surplus food
         elif needs.get("inventory_food", 0) > 10 and perception.market_prices.get("food", 0) > 0:
             action = "trade"
             target = self._find_market_target(perception)
             priority = 0.5
             confidence = 0.7
 
-        # Priority 10: Build when wood available and energy sufficient (max 2 buildings per agent)
+        # Priority 12: Build when wood available and energy sufficient (max 2 buildings per agent)
         elif needs.get("inventory_wood", 0) >= 20 and needs.get("energy", 1.0) > 0.3 and needs.get("builds_count", 0) < 2:
             action = "build"
             target = "farm"
             priority = 0.6
             confidence = 0.6
 
-        # Priority 11: Gather resources
+        # Priority 13: Gather resources
         elif perception.visible_resources.get("iron", 0) > 20:
             action = "gather_iron"
             priority = 0.6
@@ -237,14 +257,34 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.5
             confidence = 0.6
 
-        # Priority 12: Social actions (general, not urgent)
+        # Priority 14: Social actions (general, not urgent)
         elif perception.nearby_agents and needs.get("social", 1.0) < 0.7:
             action = "socialize"
             target = random.choice(perception.nearby_agents)
             priority = 0.4
             confidence = 0.5
 
-        # Priority 13: Explore
+        # Priority 13: Organization — join if nearby agent has one and we don't
+        elif (not needs.get("organization")) and perception.nearby_agents:
+            nearby_org = None
+            for near_id in perception.nearby_agents:
+                org = needs.get(f"org_of_{near_id}")
+                if org:
+                    nearby_org = org
+                    break
+            if nearby_org:
+                action = "join_organization"
+                target = nearby_org
+                priority = 0.4
+                confidence = 0.5
+
+        # Priority 14: Organization — form if no org and have enough food
+        elif (not needs.get("organization")) and needs.get("inventory_food", 0) > 50:
+            action = "form_organization"
+            priority = 0.3
+            confidence = 0.4
+
+        # Priority 15: Explore
         else:
             action = "explore"
             priority = 0.3
@@ -710,6 +750,11 @@ class Agent:
         elif action == "join_organization":
             if target and target != "unknown":
                 self.organization = target
+                # Update org members list
+                for org in core.world.get("organizations", []):
+                    if org.id == target and self.id not in org.members:
+                        org.members.append(self.id)
+                        break
                 events.append({
                     "type": "joined_organization",
                     "data": {"organization_id": target, "member": self.id}

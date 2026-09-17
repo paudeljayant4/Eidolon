@@ -138,7 +138,12 @@ class SimulationCore:
                 "inventory_wood": agent.inventory.resources.get("wood", 0),
                 "inventory_iron": agent.inventory.resources.get("iron", 0),
                 "builds_count": agent.builds_count,
+                "organization": agent.organization,
             }
+            # Pass org info for nearby agents
+            for other in self.world.get("agents", []):
+                if other.id != agent.id and other.organization:
+                    needs[f"org_of_{other.id}"] = other.organization
             
             # Agent decides
             decision = agent.decide(perception, needs)
