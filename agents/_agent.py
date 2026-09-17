@@ -163,69 +163,73 @@ class RuleBasedPlanner(BasePlanner):
         priority = 0.5
         confidence = 0.7
 
-        # Priority 1: Eat if we have food and are hungry (takes precedence)
+        # Priority 1: Eat if we have food and are hungry
         if needs.get("inventory_food", 0) > 0 and needs.get("hunger", 1.0) < 0.7:
             action = "eat"
             priority = 0.8
             confidence = 0.8
 
-        # Priority 2: Satisfy urgent needs (only if we have no food to eat)
+        # Priority 2: Seek food when critically hungry and no food available
         elif needs.get("hunger", 1.0) < 0.3:
             action = "seek_food"
             confidence = 0.9
             priority = 1.0
 
-        # Rest when energy is low (highest priority after urgent needs)
-        elif needs.get("rest", 1.0) < 0.3 and needs.get("energy", 1.0) < 0.5:
+        # Priority 3: Rest when energy is depleted
+        elif needs.get("energy", 1.0) < 0.4:
             action = "rest"
             confidence = 0.9
             priority = 1.0
 
-        # Priority 3: Social need — socialize if social is low
-        elif needs.get("social", 1.0) < 0.5:
-            action = "socialize"
-            target = perception.nearby_agents[0] if perception.nearby_agents else None
-            priority = 0.5
-            confidence = 0.6
+        # Priority 4: Drink water if thirsty and have water in inventory
+        elif needs.get("thirst", 1.0) < 0.5 and needs.get("inventory_water", 0) > 0:
+            action = "drink"
+            priority = 0.9
+            confidence = 0.9
 
+        # Priority 5: Seek water when critically thirsty and no water available
         elif needs.get("thirst", 1.0) < 0.3:
             action = "seek_water"
             confidence = 0.9
             priority = 1.0
 
-        # Drink water when thirsty and have water in inventory
-        elif needs.get("thirst", 1.0) < 0.5 and needs.get("inventory_water", 0) > 0:
-            action = "drink"
-            priority = 0.8
-            confidence = 0.8
+        # Priority 6: Social need
+        elif needs.get("social", 1.0) < 0.5:
+            action = "socialize"
+            target = random.choice(perception.nearby_agents) if perception.nearby_agents else None
+            priority = 0.6
+            confidence = 0.6
 
-        # Priority 4: Trade - buy food when hungry and market has food
+        # Priority 7: Gather wood if need it for building
+        elif needs.get("inventory_wood", 0) < 20 and needs.get("energy", 1.0) > 0.3:
+            action = "gather_wood"
+            priority = 0.6
+            confidence = 0.7
+
+        # Priority 8: Trade - buy food when hungry and market has food
         elif needs.get("hunger", 1.0) < 0.8 and needs.get("inventory_food", 0) == 0 and perception.market_prices.get("food", 0) > 0:
             action = "trade"
             target = self._find_market_target(perception)
             priority = 0.8
             confidence = 0.8
-        # Trade - sell surplus food
-        elif needs.get("inventory_food", 0) > 5 and perception.market_prices.get("food", 0) > 0:
+
+        # Priority 9: Trade - sell surplus food
+        elif needs.get("inventory_food", 0) > 10 and perception.market_prices.get("food", 0) > 0:
             action = "trade"
             target = self._find_market_target(perception)
-            priority = 0.7
+            priority = 0.5
             confidence = 0.7
 
-        # Priority 5: Build - construct farm when wood available and energy sufficient
-        elif needs.get("inventory_wood", 0) > 30 and needs.get("energy", 1.0) > 0.3:
+        # Priority 10: Build when wood available and energy sufficient (max 2 buildings per agent)
+        elif needs.get("inventory_wood", 0) >= 20 and needs.get("energy", 1.0) > 0.3 and needs.get("builds_count", 0) < 2:
             action = "build"
             target = "farm"
             priority = 0.6
             confidence = 0.6
 
-        # Priority 6: Economic actions - gather resources
+        # Priority 11: Gather resources
         elif perception.visible_resources.get("iron", 0) > 20:
             action = "gather_iron"
-            priority = 0.6
-            confidence = 0.7
-        elif perception.visible_resources.get("wood", 0) > 30:
-            action = "gather_wood"
             priority = 0.6
             confidence = 0.7
         elif perception.visible_resources.get("food", 0) > 30:
@@ -233,14 +237,14 @@ class RuleBasedPlanner(BasePlanner):
             priority = 0.5
             confidence = 0.6
 
-        # Priority 7: Social actions (general, not urgent)
+        # Priority 12: Social actions (general, not urgent)
         elif perception.nearby_agents and needs.get("social", 1.0) < 0.7:
             action = "socialize"
-            target = perception.nearby_agents[0]
+            target = random.choice(perception.nearby_agents)
             priority = 0.4
             confidence = 0.5
 
-        # Priority 8: Explore
+        # Priority 13: Explore
         else:
             action = "explore"
             priority = 0.3
@@ -341,6 +345,7 @@ class Agent:
     health: float = 1.0
     energy: float = 1.0
     planner: BasePlanner | None = None
+    builds_count: int = 0
 
     def perceive(self, world_state: dict) -> Perception:
         perception = Perception()
@@ -471,15 +476,16 @@ class Agent:
                         break
                 if market:
                     food_price = market.prices.get("food", 1.0)
-                    if self.inventory.resources.get("food", 0) > 0:
+                    if self.inventory.resources.get("food", 0) > 10:
                         self.inventory.resources["food"] -= 1
-                        self.needs.hunger = min(1.0, self.needs.hunger + 0.1)
-                        self.health = min(1.0, self.health + 0.05)
+                        self.energy = min(1.0, self.energy + 0.02)
                         events.append({"type": "traded", "data": {"action": "sell_food", "price": food_price}})
-                    else:
+                    elif self.inventory.resources.get("food", 0) == 0:
                         self.inventory.resources["food"] = self.inventory.resources.get("food", 0) + 1
                         self.needs.hunger = max(0, self.needs.hunger - 0.01)
                         events.append({"type": "traded", "data": {"action": "buy_food", "price": food_price}})
+                    else:
+                        events.append({"type": "hunger_motivation", "data": {"action": "trade", "reason": "no actionable surplus or deficit"}})
                 else:
                     events.append({"type": "hunger_motivation", "data": {"action": "trade", "reason": "no market"}})
             else:
@@ -487,27 +493,61 @@ class Agent:
 
         elif action == "build":
             if target and target != "unknown":
-                # Consume resources for building
-                if target == "farm" and self.inventory.resources.get("wood", 0) >= 20:
+                if self.inventory.resources.get("wood", 0) >= 20:
                     self.inventory.resources["wood"] -= 20
                     self.energy = max(0, self.energy - 0.15)
-                    events.append({"type": "build", "data": {"building_type": "farm", "location": target}})
-                elif self.inventory.resources.get("wood", 0) >= 20:
-                    # Generic build for other types
-                    self.inventory.resources["wood"] -= 20
-                    self.energy = max(0, self.energy - 0.2)
-                    events.append({"type": "build", "data": {"building_type": target, "location": target}})
+                    self.builds_count += 1
+                    building_id = f"bld-player-{self.id}-{self.builds_count}"
+                    from simulation._types import Building, BuildingType, Position
+                    new_bld = Building(
+                        id=building_id,
+                        type=BuildingType(target) if target in [e.value for e in BuildingType] else BuildingType.FARM,
+                        regionId=f"region-{self.position.x}-{self.position.y}",
+                        position=Position(x=self.position.x, y=self.position.y),
+                        level=1,
+                        resourcesProduced=[ResourceType.FOOD],
+                        resourcesConsumed=[ResourceType.WATER],
+                        capacity=50
+                    )
+                    buildings = core.world.setdefault("buildings", [])
+                    buildings.append(new_bld)
+                    events.append({"type": "build", "data": {
+                        "building": {
+                            "id": building_id,
+                            "type": target,
+                            "region_id": f"region-{self.position.x}-{self.position.y}",
+                            "x": self.position.x,
+                            "y": self.position.y,
+                            "level": 1
+                        },
+                        "building_type": target,
+                        "location": target
+                    }})
                 else:
                     events.append({"type": "hunger_motivation", "data": {"action": "build", "reason": "insufficient resources"}})
             else:
                 events.append({"type": "hunger_motivation", "data": {"action": "build", "reason": "no target"}})
 
         elif action == "gather_wood":
-            self.inventory.resources["wood"] = self.inventory.resources.get("wood", 0) + 10
-            events.append({
-                "type": "resource_gathered",
-                "data": {"resource": "wood", "amount": 10}
-            })
+            gathered = False
+            for res in core.world.get("resources", []):
+                if res.type == ResourceType.WOOD and res.amount > 0:
+                    self.inventory.resources["wood"] = self.inventory.resources.get("wood", 0) + 10
+                    res.amount -= 1
+                    self.energy = max(0, self.energy - 0.05)
+                    events.append({
+                        "type": "resource_gathered",
+                        "data": {"resource": "wood", "amount": 10}
+                    })
+                    gathered = True
+                    break
+            if not gathered:
+                self.inventory.resources["wood"] = self.inventory.resources.get("wood", 0) + 5
+                self.energy = max(0, self.energy - 0.05)
+                events.append({
+                    "type": "resource_gathered",
+                    "data": {"resource": "wood", "amount": 5, "source": "ambient"}
+                })
 
         elif action == "gather_iron":
             self.inventory.resources["iron"] = self.inventory.resources.get("iron", 0) + 5

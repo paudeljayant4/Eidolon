@@ -487,3 +487,57 @@ After Cycle 7 added building production, the simulation had functioning resource
 
 ### Category Rotation
 Emergent depth improved. Next cycle should address: Correctness (energy depletion root cause), Performance (scale testing), or Feature depth (org dynamics, partner diversity).
+
+## Cycle 9: Emergent Depth — Water/Rest/Trade/Build Integration (Sep 2026)
+
+### Observed
+After Cycle 8 connected agents to the tick loop, 500-tick observation revealed:
+- Thirst stuck at 0: agents had 5,775 water in inventory but `seek_water` (priority 5) blocked `drink` (priority 6)
+- Energy oscillation: hit 0 at tick 100, oscillated 0-0.24 for 400 ticks; rest condition too restrictive
+- Trade died after tick 100: all 325 trades in first 100 ticks, then hunger > 0.8 stopped motivation
+- Zero build events: no wood gathered, build never reached in decision chain
+- Partner diversity = 0: planner always picked `nearby_agents[0]`, only 2 agents socialized
+- Trade sell branch incorrectly restored hunger (selling food = eating food bug)
+
+### Evidence (500 ticks, seed=42)
+| Metric | Before fix | After fix |
+|--------|-----------|-----------|
+| Drink events | 0 | 115 |
+| Thirst at tick 500 | 0.000 | 0.600 |
+| Energy at tick 500 | 0.095 | 0.995 |
+| Trade events total | 325 | 2,000 |
+| Trade duration | ticks 0-100 only | all 500 ticks |
+| Fed events | 105 | 120 |
+| Build events | 0 | 10 (capped 2/agent) |
+| Buildings | 9 | 19 |
+| Socialize partners | 2 agents | 5 agents |
+| Rest events | 90 | 15 (energy stable) |
+| Tests | 30 | 40 |
+
+### Fixes
+1. **Swapped drink/seek_water priorities**: drink fires first when inventory_water > 0 and thirst < 0.5; seek_water only when no water
+2. **Relaxed rest condition**: rest triggers on `energy < 0.4` (removed rest < 0.3 requirement)
+3. **Random partner selection**: `random.choice(perception.nearby_agents)` instead of `[0]`
+4. **Wood gathering before trade**: gather_wood at priority 7, before trade priorities 8-9
+5. **Fixed trade sell bug**: selling food no longer restores hunger/health
+6. **Build cap**: max 2 buildings per agent (builds_count field)
+7. **Build creates world buildings**: build action adds Building to world["buildings"] directly
+8. **Proper build event data**: includes building dict for replay handler compatibility
+
+### Verification
+- **40 regression tests pass** (10 eat + 13 emergent + 2 market + 3 building + 2 social fragility + 10 Cycle 9)
+- **Determinism verified**: same seed produces identical results across runs
+- **Sustained trade**: 2,000 trades across all 500 ticks (not just first 100)
+- **Energy stable**: 0.995 at tick 500 (was 0.095)
+- **Thirst functional**: 0.600 at tick 500 (was 0.000)
+- **Buildings built**: 10 new farms from agent actions (capped at 2 per agent)
+
+### Files Changed
+- agents/_agent.py: planner reordering, drink/rest/gather_wood/build fixes, builds_count field, trade sell fix
+- simulation/core.py: builds_count in needs dict
+- test_emergent_depth.py: 10 new regression tests (TestCycle9EmergentDepth class)
+- docs/issues/Cycle9-emergent-depth-water-rest-trade.md: issue doc
+- PROGRESS.md: this entry
+
+### Category Rotation
+Emergent depth improved significantly. Next cycle should address: Correctness (verify no regressions in edge cases), Performance (scale testing with 50+ agents), or Feature depth (organization growth, conflict system).

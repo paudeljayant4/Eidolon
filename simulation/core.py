@@ -137,6 +137,7 @@ class SimulationCore:
                 "inventory_water": agent.inventory.resources.get("water", 0),
                 "inventory_wood": agent.inventory.resources.get("wood", 0),
                 "inventory_iron": agent.inventory.resources.get("iron", 0),
+                "builds_count": agent.builds_count,
             }
             
             # Agent decides
